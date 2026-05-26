@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useApp } from '@/lib/store'
 import { Card, Badge, Button, Modal, Input, Select, PageHeader } from '@/components/ui'
 import { User, UserRole } from '@/types'
 import { generateId } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import * as XLSX from 'xlsx'
 
 const ROLE_LABEL: Record<UserRole, string> = {
   owner: 'เจ้าของ',
@@ -123,6 +124,92 @@ export default function SettingsPage() {
   const { state, dispatch } = useApp()
   const user = state.currentUser
   const [form, setForm] = useState<{ open: boolean; member?: User | null }>({ open: false })
+  const [importMsg, setImportMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  function handleExport() {
+    const { currentUser, isLoading, ...data } = state as any
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `rase-crm-backup-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleExportExcel() {
+    const wb = XLSX.utils.book_new()
+
+    const customers = state.customers.map(c => ({
+      'ชื่อ': c.name,
+      'เบอร์โทร': c.phone,
+      'ที่อยู่': c.address ?? '',
+      'ระดับ': c.tier.toUpperCase(),
+      'ออเดอร์ทั้งหมด': c.totalOrders,
+      'ยอดรวม (฿)': c.totalAmount,
+      '% สำเร็จ': c.successRate,
+      'โทรล่าสุด': c.lastCallAt ? new Date(c.lastCallAt).toLocaleDateString('th-TH') : '',
+      'โทรครั้งต่อไป': c.nextCallAt ? new Date(c.nextCallAt).toLocaleDateString('th-TH') : '',
+      'หมายเหตุ': c.notes ?? '',
+    }))
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customers), 'ลูกค้า')
+
+    const orders = state.orders.map(o => ({
+      'ลูกค้า': o.customerName,
+      'เบอร์': o.customerPhone,
+      'เทเลเซล': o.telesaleName,
+      'แพ็กโดย': o.packingName ?? '',
+      'สถานะ': o.status,
+      'สินค้า': o.items.map(i => `${i.productName} x${i.quantity}`).join(', '),
+      'ยอดรวม (฿)': o.totalAmount,
+      'ส่วนลด (฿)': o.discount,
+      'ยอดสุทธิ (฿)': o.totalAmount - o.discount,
+      'เลข Tracking': o.trackingNumber ?? '',
+      'วันที่สั่ง': new Date(o.createdAt).toLocaleDateString('th-TH'),
+    }))
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(orders), 'ออเดอร์')
+
+    const products = state.products.map(p => ({
+      'ชื่อสินค้า': p.name,
+      'รายละเอียด': p.description ?? '',
+      'ราคา (฿)': p.price,
+      'หน่วย': p.unit,
+      'สถานะ': p.status,
+    }))
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(products), 'สินค้า')
+
+    const callLogs = state.callLogs.map(c => ({
+      'ลูกค้า': c.customerName,
+      'เบอร์': c.customerPhone,
+      'เทเลเซล': c.telesaleName,
+      'ผลการโทร': c.result,
+      'หมายเหตุ': c.notes ?? '',
+      'วันที่': new Date(c.createdAt).toLocaleDateString('th-TH'),
+    }))
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(callLogs), 'ประวัติโทร')
+
+    XLSX.writeFile(wb, `rase-crm-${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string)
+        if (!data.users || !data.customers) throw new Error('ไฟล์ไม่ถูกต้อง')
+        dispatch({ type: 'RESTORE_DATA', payload: data })
+        localStorage.setItem('crm_data', JSON.stringify(data))
+        setImportMsg({ type: 'ok', text: 'นำเข้าข้อมูลสำเร็จ' })
+      } catch {
+        setImportMsg({ type: 'err', text: 'ไฟล์ไม่ถูกต้อง กรุณาใช้ไฟล์ backup จากระบบนี้เท่านั้น' })
+      }
+      if (fileRef.current) fileRef.current.value = ''
+    }
+    reader.readAsText(file)
+  }
 
   if (user?.role !== 'owner') {
     return (
@@ -241,6 +328,38 @@ export default function SettingsPage() {
             💡 สมาชิกที่เพิ่มใหม่สามารถเข้าสู่ระบบได้ทันทีด้วยอีเมลและรหัสผ่านที่ตั้งไว้
           </p>
         </div>
+
+        {/* Backup / Restore */}
+        <Card className="p-5">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">สำรองข้อมูล (Backup)</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mb-4">Export ข้อมูลทั้งหมดเป็นไฟล์ .json แล้ว Import กลับได้ทุกเมื่อ</p>
+
+          {importMsg && (
+            <div className={cn('mb-4 px-4 py-3 rounded-xl text-sm', importMsg.type === 'ok' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800')}>
+              {importMsg.type === 'ok' ? '✅' : '⚠️'} {importMsg.text}
+            </div>
+          )}
+
+          <div className="flex gap-3 flex-wrap">
+            <Button onClick={handleExport}>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              Backup (.json)
+            </Button>
+            <Button variant="secondary" onClick={handleExportExcel}>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Export Excel
+            </Button>
+            <Button variant="secondary" onClick={() => { setImportMsg(null); fileRef.current?.click() }}>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" /></svg>
+              Import Backup
+            </Button>
+            <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+          </div>
+
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-3">
+            ⚠️ Import จะ<span className="font-semibold text-slate-600 dark:text-slate-300"> แทนที่ข้อมูลทั้งหมด</span> ด้วยข้อมูลจากไฟล์ที่เลือก
+          </p>
+        </Card>
       </div>
 
       {form.open && (

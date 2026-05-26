@@ -33,6 +33,7 @@ type AppAction =
   | { type: 'UPDATE_ORDER'; payload: Order }
   | { type: 'ADD_HISTORY'; payload: HistoryLog }
   | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'RESTORE_DATA'; payload: Partial<AppState> }
 
 const initialState: AppState = {
   currentUser: null,
@@ -63,6 +64,7 @@ function reducer(state: AppState, action: AppAction): AppState {
     case 'UPDATE_ORDER': return { ...state, orders: state.orders.map(o => o.id === action.payload.id ? action.payload : o) }
     case 'ADD_HISTORY': return { ...state, history: [action.payload, ...state.history] }
     case 'SET_LOADING': return { ...state, isLoading: action.payload }
+    case 'RESTORE_DATA': return { ...state, ...action.payload }
     default: return state
   }
 }
