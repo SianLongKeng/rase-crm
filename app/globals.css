@@ -10,3 +10,19 @@ body {
 .scrollbar-thin::-webkit-scrollbar { width: 4px; }
 .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
 .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+.dark .scrollbar-thin::-webkit-scrollbar-thumb { background: #3f3f46; }
+
+/* Dark theme = pure neutral black/grey (override slate's blue tint in dark mode only) */
+.dark {
+  --color-slate-50:  #fafafa;
+  --color-slate-100: #f4f4f5;
+  --color-slate-200: #e4e4e7;
+  --color-slate-300: #d4d4d8;
+  --color-slate-400: #a1a1aa;
+  --color-slate-500: #71717a;
+  --color-slate-600: #52525b;
+  --color-slate-700: #3f3f46;
+  --color-slate-800: #1f1f23;
+  --color-slate-900: #131316;
+  --color-slate-950: #0a0a0c;
+}

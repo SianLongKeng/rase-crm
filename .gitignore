@@ -40,4 +40,14 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.vercel
+# brief/design docs and screenshots (private — not pushed to repo)
+*.pdf
+*.jpg
+*.jpeg
+*.JPG
+*.png
+# but allow images inside public/ (logos, assets ที่จะ deploy)
+!public/**/*.jpg
+!public/**/*.png
+!public/**/*.jpeg
+!public/**/*.svg

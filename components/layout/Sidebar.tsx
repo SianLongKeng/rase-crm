@@ -6,24 +6,27 @@ import { usePathname } from 'next/navigation'
 import { useApp } from '@/lib/store'
 import { useTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
-import { UserRole } from '@/types'
+import { UserRole, ROLE_LABEL } from '@/types'
 
 const navItems: { href: string; label: string; roles: UserRole[]; emoji: string }[] = [
-  { href: '/dashboard', label: 'ภาพรวม', roles: ['owner'], emoji: '📊' },
-  { href: '/queue', label: 'คิวโทรวันนี้', roles: ['telesale', 'owner'], emoji: '📞' },
-  { href: '/customers', label: 'ฐานลูกค้า', roles: ['owner', 'telesale'], emoji: '👥' },
-  { href: '/orders', label: 'ออเดอร์', roles: ['owner', 'telesale'], emoji: '🧾' },
-  { href: '/packing', label: 'แพ็กสินค้า', roles: ['packing', 'owner'], emoji: '📦' },
-  { href: '/products', label: 'สินค้า', roles: ['owner'], emoji: '🛍️' },
-  { href: '/history', label: 'ประวัติ', roles: ['owner'], emoji: '🕒' },
-  { href: '/settings', label: 'จัดการทีม', roles: ['owner'], emoji: '⚙️' },
+  { href: '/dashboard',  label: 'ภาพรวม',         roles: ['owner', 'admin'],             emoji: '📊' },
+  { href: '/products',   label: 'สินค้า',          roles: ['owner', 'admin'],             emoji: '🛍️' },
+  { href: '/import',     label: 'นำเข้าออเดอร์',   roles: ['owner', 'admin'],             emoji: '📥' },
+  { href: '/grade-settings', label: 'เกรดลูกค้า',  roles: ['owner', 'admin'],             emoji: '🏆' },
+  { href: '/customers',  label: 'ฐานลูกค้า',       roles: ['owner', 'admin', 'telesale'], emoji: '👥' },
+  { href: '/queue',      label: 'คิวโทรวันนี้',   roles: ['telesale', 'owner', 'admin'], emoji: '📞' },
+  { href: '/packing',    label: 'แพ็คสินค้า',     roles: ['packing', 'owner', 'admin'],  emoji: '📦' },
+  { href: '/commission', label: 'ค่าคอมมิชชั่น',   roles: ['owner', 'admin', 'telesale'], emoji: '💰' },
+  { href: '/profit',     label: 'กำไร',             roles: ['owner', 'admin'],             emoji: '📈' },
+  { href: '/settings',   label: 'จัดการทีม',       roles: ['owner'],                      emoji: '⚙️' },
+  { href: '/history',    label: 'ประวัติ',         roles: ['owner', 'admin'],             emoji: '🕒' },
 ]
 
-const roleLabel: Record<UserRole, string> = { owner: 'เจ้าของ', telesale: 'เทเลเซล', packing: 'แพ็กสินค้า' }
 const roleBg: Record<UserRole, string> = {
-  owner: 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300',
+  owner:    'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300',
+  admin:    'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300',
   telesale: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
-  packing: 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300',
+  packing:  'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300',
 }
 
 function NavContent({ onClose }: { onClose?: () => void }) {
@@ -33,21 +36,29 @@ function NavContent({ onClose }: { onClose?: () => void }) {
   const user = state.currentUser
   const role = user?.role ?? 'telesale'
 
-  const pendingPack = state.orders.filter(o => o.status === 'pending_pack').length
-  const todayQueue = state.customers.filter(c => c.nextCallAt && new Date(c.nextCallAt) <= new Date()).length
-  const badges: Record<string, number> = { '/packing': pendingPack, '/queue': todayQueue }
+  const waitPack = state.orders.filter(o => o.status === 'wait_pack' || o.status === 'in_myorder').length
+  const shipping = state.orders.filter(o => o.status === 'shipping').length
+  const packBadge = role === 'packing' ? waitPack + shipping : waitPack
+  const todayQueue = state.customers.filter(c => {
+    if (!c.nextCallAt || new Date(c.nextCallAt) > new Date()) return false
+    if (role === 'telesale') return c.ownerId === user?.id
+    return true
+  }).length
+  const badges: Record<string, number> = {
+    '/packing': packBadge,
+    '/queue': todayQueue,
+  }
   const visible = navItems.filter(n => n.roles.includes(role))
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800">
-      {/* Logo */}
       <div className="px-5 py-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-sm">
-            <span className="text-white font-black text-sm">RC</span>
+            <span className="text-white font-black text-[10px] leading-none">CNP</span>
           </div>
           <div>
-            <p className="font-black text-slate-800 dark:text-slate-100 text-sm">RASE CRM</p>
+            <p className="font-black text-slate-800 dark:text-slate-100 text-sm">CHANAPHAT659</p>
             <p className="text-xs text-slate-400 dark:text-slate-500">Telesales System</p>
           </div>
         </div>
@@ -58,7 +69,6 @@ function NavContent({ onClose }: { onClose?: () => void }) {
         )}
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto scrollbar-thin">
         {visible.map(item => {
           const isActive = pathname === item.href
@@ -78,7 +88,7 @@ function NavContent({ onClose }: { onClose?: () => void }) {
               </span>
               <span className="flex-1">{item.label}</span>
               {badge > 0 && (
-                <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold shrink-0">{badge}</span>
+                <span className="bg-red-500 text-white text-xs rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center font-bold shrink-0">{badge}</span>
               )}
               {isActive && <div className="w-1 h-4 bg-emerald-500 rounded-full shrink-0" />}
             </Link>
@@ -86,9 +96,7 @@ function NavContent({ onClose }: { onClose?: () => void }) {
         })}
       </nav>
 
-      {/* Theme + User */}
       <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-        {/* Theme toggle */}
         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
           {([['light', '☀️', 'สว่าง'], ['dark', '🌙', 'มืด']] as const).map(([t, icon, label]) => (
             <button key={t} onClick={() => setTheme(t)}
@@ -102,7 +110,6 @@ function NavContent({ onClose }: { onClose?: () => void }) {
           ))}
         </div>
 
-        {/* User card */}
         <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-3">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center text-white text-sm font-bold shrink-0">
@@ -110,7 +117,7 @@ function NavContent({ onClose }: { onClose?: () => void }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{user?.name}</p>
-              <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', roleBg[role])}>{roleLabel[role]}</span>
+              <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', roleBg[role])}>{ROLE_LABEL[role]}</span>
             </div>
           </div>
         </div>
@@ -132,9 +139,9 @@ export function Sidebar() {
       <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-            <span className="text-white font-black text-xs">RC</span>
+            <span className="text-white font-black text-[9px] leading-none">CNP</span>
           </div>
-          <span className="font-black text-slate-800 dark:text-slate-100 text-sm">RASE CRM</span>
+          <span className="font-black text-slate-800 dark:text-slate-100 text-sm">CHANAPHAT659</span>
         </div>
         <button onClick={() => setOpen(true)} className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white p-1">
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>

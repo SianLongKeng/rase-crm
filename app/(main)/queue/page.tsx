@@ -2,236 +2,253 @@
 
 import { useState } from 'react'
 import { useApp } from '@/lib/store'
-import { Badge, Button, Modal, Card, EmptyState, Textarea, Select, Input, PageHeader } from '@/components/ui'
-import { TIER_LABEL, TIER_COLOR, CALL_RESULT_LABEL, Customer, OrderItem, Product } from '@/types'
-import { cn, formatDate, formatMoney } from '@/lib/utils'
+import { Badge, Card, EmptyState, PageHeader } from '@/components/ui'
+import {
+  Customer, CustomerGrade,
+  GRADE_LABEL, GRADE_COLOR, GRADE_EMOJI,
+  CUSTOMER_STATUS_LABEL, CUSTOMER_STATUS_COLOR,
+} from '@/types'
+import { cn, formatDate, formatDateTime, formatMoney } from '@/lib/utils'
+import { CallModal } from '@/components/CallModal'
 
-function TierBadge({ tier }: { tier: Customer['tier'] }) {
-  const map = { vip: '⭐ VIP', warm: '🔥 WARM', cold: '❄️ COLD' }
-  return <Badge label={map[tier]} className={TIER_COLOR[tier]} />
-}
-
-function CallModal({ customer, products, onClose, onSubmit }: {
-  customer: Customer
-  products: Product[]
-  onClose: () => void
-  onSubmit: (result: string, notes: string, followUpAt?: string, items?: OrderItem[], discount?: number) => void
-}) {
-  const [result, setResult] = useState('follow_up')
-  const [notes, setNotes] = useState('')
-  const [followUpAt, setFollowUpAt] = useState('')
-  const [items, setItems] = useState<OrderItem[]>([])
-  const [discount, setDiscount] = useState(0)
-  const [productId, setProductId] = useState('')
-  const [qty, setQty] = useState(1)
-
-  const activeProducts = products.filter(p => p.status === 'active')
-  const total = items.reduce((s, i) => s + i.subtotal, 0)
-
-  function addItem() {
-    const prod = activeProducts.find(p => p.id === productId)
-    if (!prod) return
-    const existing = items.find(i => i.productId === productId)
-    if (existing) {
-      setItems(items.map(i => i.productId === productId ? { ...i, quantity: i.quantity + qty, subtotal: (i.quantity + qty) * i.price } : i))
-    } else {
-      setItems([...items, { productId: prod.id, productName: prod.name, price: prod.price, quantity: qty, subtotal: prod.price * qty }])
-    }
-    setProductId(''); setQty(1)
-  }
-
-  const resultColors: Record<string, string> = {
-    closed: 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
-    follow_up: 'border-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300',
-    no_answer: 'border-slate-300 bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300',
-    not_interested: 'border-red-300 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400',
-  }
-
-  return (
-    <Modal open onClose={onClose} title={`บันทึกผลการโทร`} width="max-w-2xl">
-      <div className="space-y-5">
-        {/* Customer Info */}
-        <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 rounded-2xl p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-600 shadow-sm flex items-center justify-center text-lg font-bold text-slate-700 dark:text-slate-200">
-              {customer.name.charAt(2) ?? customer.name.charAt(0)}
-            </div>
-            <div>
-              <p className="font-bold text-slate-800 dark:text-slate-100">{customer.name}</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{customer.phone}</p>
-            </div>
-            <TierBadge tier={customer.tier} />
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
-            {[
-              { v: `${customer.totalOrders}`, l: 'ออเดอร์' },
-              { v: `฿${formatMoney(customer.totalAmount)}`, l: 'ยอดรวม' },
-              { v: `${customer.successRate}%`, l: 'สำเร็จ' },
-            ].map(s => (
-              <div key={s.l} className="bg-white dark:bg-slate-600 rounded-xl py-2">
-                <p className="font-bold text-slate-800 dark:text-slate-100 text-sm">{s.v}</p>
-                <p className="text-xs text-slate-400 dark:text-slate-300">{s.l}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Result picker */}
-        <div>
-          <p className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">ผลการโทร</p>
-          <div className="grid grid-cols-2 gap-2">
-            {Object.entries(CALL_RESULT_LABEL).map(([k, v]) => (
-              <button key={k} onClick={() => setResult(k)}
-                className={cn('p-3 rounded-xl border-2 text-sm font-semibold transition-all text-left', result === k ? resultColors[k] : 'border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-200 dark:hover:border-slate-600')}>
-                {k === 'closed' && '✅ '}{k === 'follow_up' && '🔁 '}{k === 'no_answer' && '📵 '}{k === 'not_interested' && '❌ '}{v}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {result === 'follow_up' && (
-          <Input label="📅 นัดโทรกลับวันที่" type="datetime-local" value={followUpAt} onChange={e => setFollowUpAt(e.target.value)} />
-        )}
-
-        {result === 'closed' && (
-          <div className="border-2 border-emerald-100 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/20 rounded-2xl p-4 space-y-3">
-            <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">🛍️ สินค้าที่สั่ง</p>
-            <div className="flex gap-2">
-              <select value={productId} onChange={e => setProductId(e.target.value)}
-                className="flex-1 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
-                <option value="">เลือกสินค้า</option>
-                {activeProducts.map(p => <option key={p.id} value={p.id}>{p.name} — ฿{formatMoney(p.price)}/{p.unit}</option>)}
-              </select>
-              <input type="number" value={qty} onChange={e => setQty(Number(e.target.value))} min={1}
-                className="w-16 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-400" />
-              <Button size="sm" onClick={addItem} disabled={!productId}>+ เพิ่ม</Button>
-            </div>
-            {items.length > 0 && (
-              <div className="space-y-2">
-                {items.map(i => (
-                  <div key={i.productId} className="flex items-center justify-between bg-white dark:bg-slate-800 px-3 py-2 rounded-xl text-sm border border-emerald-100 dark:border-emerald-800">
-                    <span className="text-slate-700 dark:text-slate-200">{i.productName} <span className="text-slate-400">x{i.quantity}</span></span>
-                    <div className="flex items-center gap-3">
-                      <span className="font-bold text-emerald-700 dark:text-emerald-400">฿{formatMoney(i.subtotal)}</span>
-                      <button onClick={() => setItems(items.filter(x => x.productId !== i.productId))} className="text-red-300 hover:text-red-500 text-lg leading-none">✕</button>
-                    </div>
-                  </div>
-                ))}
-                <div className="flex items-center gap-3 pt-1">
-                  <span className="text-sm text-slate-500 dark:text-slate-400">ส่วนลด ฿</span>
-                  <input type="number" value={discount} onChange={e => setDiscount(Number(e.target.value))} min={0}
-                    className="w-24 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
-                  <span className="ml-auto text-sm font-black text-emerald-700 dark:text-emerald-400">ยอดสุทธิ ฿{formatMoney(total - discount)}</span>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        <Textarea label="หมายเหตุ" value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="บันทึกรายละเอียดเพิ่มเติม..." />
-
-        <div className="flex justify-end gap-2 pt-1">
-          <Button variant="secondary" onClick={onClose}>ยกเลิก</Button>
-          <Button size="lg" onClick={() => onSubmit(result, notes, followUpAt || undefined, result === 'closed' ? items : undefined, discount)}>
-            บันทึกผลการโทร
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
+const GRADE_OPTS: CustomerGrade[] = ['A', 'B', 'C', 'D']
 
 export default function QueuePage() {
   const { state, completeCall } = useApp()
+  const user = state.currentUser
+  const isTele = user?.role === 'telesale'
+
   const [selected, setSelected] = useState<Customer | null>(null)
+  const [callFor, setCallFor] = useState<Customer | null>(null)
   const [search, setSearch] = useState('')
+  const [gradeTab, setGradeTab] = useState<CustomerGrade | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
 
-  const queue = state.customers
-    .filter(c => c.nextCallAt && new Date(c.nextCallAt) <= new Date())
+  const gradeOrder: Record<CustomerGrade, number> = { A: 0, B: 1, C: 2, D: 3 }
+
+  let queue = state.customers.filter(c => c.nextCallAt && new Date(c.nextCallAt) <= new Date())
+  if (isTele) queue = queue.filter(c => c.ownerId === user?.id)
+  queue = queue
     .filter(c => !search || c.name.includes(search) || c.phone.includes(search))
-    .sort((a, b) => ({ vip: 0, warm: 1, cold: 2 }[a.tier] - { vip: 0, warm: 1, cold: 2 }[b.tier]))
+    .filter(c => statusFilter === 'all' || c.status === statusFilter)
+    .sort((a, b) => gradeOrder[a.grade] - gradeOrder[b.grade])
 
-  const tierCounts = { vip: queue.filter(c => c.tier === 'vip').length, warm: queue.filter(c => c.tier === 'warm').length, cold: queue.filter(c => c.tier === 'cold').length }
+  const gradeCounts: Record<CustomerGrade | 'all', number> = {
+    all: queue.length,
+    A: queue.filter(c => c.grade === 'A').length,
+    B: queue.filter(c => c.grade === 'B').length,
+    C: queue.filter(c => c.grade === 'C').length,
+    D: queue.filter(c => c.grade === 'D').length,
+  }
 
-  function handleSubmit(result: string, notes: string, followUpAt?: string, items?: OrderItem[], discount?: number) {
-    if (!selected) return
-    completeCall(selected.id, result as never, notes, followUpAt, items, discount)
-    setSelected(null)
+  const visible = gradeTab === 'all' ? queue : queue.filter(c => c.grade === gradeTab)
+
+  // Most recent order per customer (for "ข้อมูลล่าสุด" column)
+  function latestOrder(customerId: string) {
+    return state.orders
+      .filter(o => o.customerId === customerId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+  }
+  function latestCall(customerId: string) {
+    return state.callLogs
+      .filter(c => c.customerId === customerId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+  }
+  function customerOrders(customerId: string) {
+    return state.orders.filter(o => o.customerId === customerId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   }
 
   return (
     <div>
       <PageHeader
-        title="คิวโทรวันนี้"
-        subtitle={`${queue.length} ราย รอโทร`}
+        title="คิวโทรวันนี้ 📞"
+        subtitle={`${queue.length} รายการ · อัปเดตล่าสุด ${new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.`}
         action={
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา..."
-            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 px-3 py-2 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:bg-white dark:focus:bg-slate-700" />
+          <div className="flex gap-2">
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 ค้นชื่อลูกค้า, เบอร์โทร..."
+              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+              <option value="all">ทุกสถานะ</option>
+              {Object.entries(CUSTOMER_STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
         }
       />
 
-      <div className="p-6 space-y-5">
-        {/* Tier summary */}
-        <div className="flex gap-3">
-          {[
-            { label: '⭐ VIP', count: tierCounts.vip, color: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300' },
-            { label: '🔥 WARM', count: tierCounts.warm, color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300' },
-            { label: '❄️ COLD', count: tierCounts.cold, color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300' },
-          ].map(t => (
-            <div key={t.label} className={cn('px-4 py-2 rounded-xl text-sm font-bold', t.color)}>
-              {t.label} <span className="opacity-70">({t.count})</span>
-            </div>
+      <div className="p-6 space-y-4">
+        {/* Grade tabs */}
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setGradeTab('all')}
+            className={cn('px-3 py-1.5 rounded-lg text-xs font-bold transition-all border',
+              gradeTab === 'all' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700')}>
+            ทั้งหมด ({gradeCounts.all})
+          </button>
+          {GRADE_OPTS.map(g => (
+            <button key={g} onClick={() => setGradeTab(g)}
+              className={cn('px-3 py-1.5 rounded-lg text-xs font-bold transition-all border',
+                gradeTab === g ? GRADE_COLOR[g] : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700')}>
+              {GRADE_EMOJI[g]} Grade {g} ({gradeCounts[g]})
+            </button>
           ))}
         </div>
 
-        {queue.length === 0 ? <EmptyState message="ไม่มีคิวโทรวันนี้ เยี่ยมมาก!" emoji="🎉" /> : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {queue.map(c => {
-              const tierStyles = {
-                vip: { border: 'border-l-4 border-l-yellow-400', badge: '⭐ VIP', badgeColor: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300' },
-                warm: { border: 'border-l-4 border-l-orange-400', badge: '🔥 WARM', badgeColor: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300' },
-                cold: { border: 'border-l-4 border-l-blue-400', badge: '❄️ COLD', badgeColor: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' },
-              }[c.tier]
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_440px] gap-4">
+          {visible.length === 0 ? <EmptyState message="ไม่มีคิวโทรวันนี้ เยี่ยมมาก!" emoji="🎉" /> : (
+            <Card className="overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide bg-slate-50 dark:bg-slate-800/50">
+                      <th className="text-left py-3 px-3 font-medium w-12">ลำดับ</th>
+                      <th className="text-left py-3 px-3 font-medium">ลูกค้า</th>
+                      <th className="text-left py-3 px-3 font-medium">ข้อมูลล่าสุด</th>
+                      <th className="text-center py-3 px-3 font-medium">สถานะ</th>
+                      <th className="text-left py-3 px-3 font-medium">นัดโทรครั้งต่อไป</th>
+                      <th className="py-3 px-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((c, i) => {
+                      const lo = latestOrder(c.id)
+                      const isSelected = selected?.id === c.id
+                      return (
+                        <tr key={c.id} className={cn('border-b border-slate-50 dark:border-slate-800 cursor-pointer transition-colors',
+                          isSelected ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50')}
+                          onClick={() => setSelected(c)}>
+                          <td className="py-3 px-3 text-slate-500 font-semibold">{i + 1}</td>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-2">
+                              <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0',
+                                c.grade === 'A' ? 'bg-emerald-100 text-emerald-700' :
+                                c.grade === 'B' ? 'bg-blue-100 text-blue-700' :
+                                c.grade === 'C' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-700')}>
+                                {c.name.charAt(2) || c.name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="font-medium text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                                  {c.name}
+                                  <Badge label={c.grade} className={cn('text-[10px]', GRADE_COLOR[c.grade])} />
+                                </p>
+                                <p className="text-xs text-slate-400">{c.phone}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3">
+                            {lo ? (
+                              <>
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                  <Badge label="ซื้อล่าสุด" className="bg-emerald-100 text-emerald-700 text-[10px]" />
+                                  <span className="text-xs text-slate-700 dark:text-slate-200 font-medium">{lo.items[0]?.productName}</span>
+                                </div>
+                                <p className="text-[11px] text-slate-400">{formatDate(lo.createdAt)} · ฿{formatMoney(lo.totalAmount - lo.discount)}</p>
+                              </>
+                            ) : (
+                              <span className="text-xs text-slate-400 italic">ยังไม่มีออเดอร์</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {c.status && <Badge label={CUSTOMER_STATUS_LABEL[c.status]} className={CUSTOMER_STATUS_COLOR[c.status]} />}
+                          </td>
+                          <td className="py-3 px-3">
+                            <p className={cn('text-sm font-semibold', new Date(c.nextCallAt!) <= new Date() ? 'text-red-500' : 'text-slate-700 dark:text-slate-200')}>
+                              {formatDate(c.nextCallAt!)}
+                            </p>
+                            <p className="text-[10px] text-slate-400">{new Date(c.nextCallAt!).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</p>
+                          </td>
+                          <td className="py-3 px-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => setCallFor(c)} className="w-8 h-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white inline-flex items-center justify-center mr-1" title="โทร">
+                              📞
+                            </button>
+                            <button onClick={() => setSelected(c)} className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 inline-flex items-center justify-center" title="โน้ต">
+                              📝
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
 
-              return (
-                <div key={c.id} className={cn('bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm hover:shadow-md dark:hover:shadow-slate-800 transition-all p-5', tierStyles.border)}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="font-bold text-slate-800 dark:text-slate-100">{c.name}</p>
-                      <p className="text-sm text-slate-400 dark:text-slate-500 mt-0.5">{c.phone}</p>
-                    </div>
-                    <span className={cn('text-xs px-2.5 py-1 rounded-full font-bold', tierStyles.badgeColor)}>{tierStyles.badge}</span>
+          {/* Side panel */}
+          {selected && (
+            <Card className="p-5 self-start sticky top-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-400 to-purple-600 flex items-center justify-center text-white font-bold">
+                    {selected.name.charAt(2) || selected.name.charAt(0)}
                   </div>
-
-                  <div className="grid grid-cols-3 gap-2 mb-4">
-                    {[
-                      { v: c.totalOrders, l: 'ออเดอร์' },
-                      { v: `${c.successRate}%`, l: 'สำเร็จ' },
-                      { v: `฿${formatMoney(c.totalAmount)}`, l: 'ยอดรวม' },
-                    ].map(s => (
-                      <div key={s.l} className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2 text-center">
-                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{s.v}</p>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">{s.l}</p>
-                      </div>
-                    ))}
+                  <div>
+                    <p className="font-bold text-slate-800 dark:text-slate-100">{selected.name}</p>
+                    <Badge label={`${GRADE_EMOJI[selected.grade]} ${GRADE_LABEL[selected.grade]}`} className={cn('text-[10px]', GRADE_COLOR[selected.grade])} />
                   </div>
-
-                  {c.notes && <p className="text-xs text-slate-400 dark:text-slate-500 italic mb-3 line-clamp-1">"{c.notes}"</p>}
-                  {c.lastCallAt && <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">โทรล่าสุด: {formatDate(c.lastCallAt)}</p>}
-
-                  <button onClick={() => setSelected(c)}
-                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-sm shadow-emerald-200 dark:shadow-emerald-900/40">
-                    <span>📞</span> โทร & บันทึกผล
-                  </button>
                 </div>
-              )
-            })}
-          </div>
-        )}
+                <div className="flex gap-1">
+                  <button onClick={() => setCallFor(selected)} className="px-2 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold">📝 บันทึกโน้ต</button>
+                  <button onClick={() => setSelected(null)} className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">✕</button>
+                </div>
+              </div>
+
+              <Card className="p-3 bg-slate-50 dark:bg-slate-800 mb-3">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-200 mb-2">ข้อมูลลูกค้า</p>
+                <table className="w-full text-xs">
+                  <tbody>
+                    <tr><td className="py-0.5 text-slate-500 w-28">เจ้าของลูกค้า</td><td className="py-0.5 font-semibold">{selected.ownerName ?? '—'}</td></tr>
+                    <tr><td className="py-0.5 text-slate-500">จังหวัด</td><td className="py-0.5">{selected.address ?? '—'}</td></tr>
+                    <tr><td className="py-0.5 text-slate-500">ออเดอร์ทั้งหมด</td><td className="py-0.5 font-semibold">{selected.totalOrders} ครั้ง</td></tr>
+                    <tr><td className="py-0.5 text-slate-500">ยอดรวม</td><td className="py-0.5 font-semibold text-emerald-600">฿{formatMoney(selected.totalAmount)}</td></tr>
+                    <tr><td className="py-0.5 text-slate-500">ลูกค้าสมัครเมื่อ</td><td className="py-0.5">{formatDate(selected.createdAt)}</td></tr>
+                  </tbody>
+                </table>
+              </Card>
+
+              <Card className="p-3 bg-slate-50 dark:bg-slate-800 mb-3">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-200 mb-2">โน้ตล่าสุด</p>
+                {(() => {
+                  const lc = latestCall(selected.id)
+                  if (!lc) return <p className="text-xs text-slate-400 italic">ยังไม่มีโน้ต</p>
+                  return (
+                    <>
+                      <p className="text-[10px] text-slate-400">{formatDateTime(lc.createdAt)} · {lc.telesaleName}</p>
+                      <p className="text-xs text-slate-700 dark:text-slate-200 mt-1">{lc.notes || '—'}</p>
+                    </>
+                  )
+                })()}
+              </Card>
+
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">ประวัติการซื้อ (ล่าสุด)</p>
+                <button className="text-xs text-emerald-600 font-semibold">ดูทั้งหมด</button>
+              </div>
+              <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                {customerOrders(selected.id).slice(0, 5).map(o => (
+                  <div key={o.id} className="flex items-center justify-between text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-slate-600 dark:text-slate-300 truncate">{formatDate(o.createdAt)} · {o.items[0]?.productName}</p>
+                    </div>
+                    <p className="text-emerald-600 font-bold shrink-0 ml-2">฿{formatMoney(o.totalAmount - o.discount)}</p>
+                  </div>
+                ))}
+                {customerOrders(selected.id).length === 0 && <p className="text-xs text-slate-400 italic">ยังไม่มีออเดอร์</p>}
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
 
-      {selected && (
-        <CallModal customer={selected} products={state.products} onClose={() => setSelected(null)} onSubmit={handleSubmit} />
+      {callFor && (
+        <CallModal
+          customer={callFor}
+          products={state.products}
+          onClose={() => setCallFor(null)}
+          onSubmit={(opts) => {
+            completeCall({ customerId: callFor.id, ...opts })
+            setCallFor(null)
+          }}
+        />
       )}
     </div>
   )

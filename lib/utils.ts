@@ -41,6 +41,20 @@ export function addDays(d: Date, days: number): string {
   return result.toISOString()
 }
 
+export function homePathForRole(role: string | undefined): string {
+  switch (role) {
+    case 'owner':
+    case 'admin':
+      return '/dashboard'
+    case 'telesale':
+      return '/queue'
+    case 'packing':
+      return '/packing'
+    default:
+      return '/login'
+  }
+}
+
 export function timeAgo(d: string | Date): string {
   const diff = Date.now() - new Date(d).getTime()
   const m = Math.floor(diff / 60000)
