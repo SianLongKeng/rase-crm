@@ -19,6 +19,13 @@ export function formatMoney(n: number): string {
 }
 
 export function generateId(): string {
+  // Prefer crypto.randomUUID for valid UUIDs (Supabase-compatible)
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+  } catch {}
+  // Fallback for older environments
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
 }
 

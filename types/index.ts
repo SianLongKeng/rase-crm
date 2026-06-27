@@ -154,27 +154,145 @@ export type CustomerGrade = 'A' | 'B' | 'C' | 'D'
 export const GRADE_LABEL: Record<CustomerGrade, string> = {
   A: 'Grade A', B: 'Grade B', C: 'Grade C', D: 'Grade D',
 }
+export const GRADE_TITLE: Record<CustomerGrade, string> = {
+  A: 'ลูกค้าประจำ', B: 'ลูกค้าทั่วไป', C: 'ลูกค้าใหม่', D: 'ลูกค้าเสี่ยง',
+}
+export const GRADE_DESCRIPTION: Record<CustomerGrade, string> = {
+  A: 'ส่งสำเร็จ ≥ 5 ครั้ง',
+  B: 'ส่งสำเร็จ 1–4 ครั้ง',
+  C: 'ยังไม่เคยส่งสำเร็จ',
+  D: 'ตีกลับ ≥ 2 ครั้ง',
+}
 export const GRADE_COLOR: Record<CustomerGrade, string> = {
   A: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700',
   B: 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700',
   C: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700',
-  D: 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600',
+  D: 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-700',
 }
-export const GRADE_EMOJI: Record<CustomerGrade, string> = { A: '🏆', B: '💎', C: '🥉', D: '🆕' }
+export const GRADE_EMOJI: Record<CustomerGrade, string> = { A: '🏆', B: '💎', C: '🆕', D: '⚠️' }
 export const GRADE_CALL_DAYS: Record<CustomerGrade, number> = { A: 21, B: 30, C: 45, D: 60 }
 export const GRADE_CARD_LIMIT: Record<CustomerGrade, number> = { A: 70, B: 35, C: 60, D: 40 }
 export const GRADE_COMMISSION_RATE: Record<CustomerGrade, number> = { A: 7, B: 5, C: 4, D: 3 }
+/** ยอดซื้อสะสมขั้นต่ำ (บาท) ต่อเกรด — null = ไม่ใช้ในการคำนวณ */
+export const GRADE_MIN_PURCHASE: Record<CustomerGrade, number | null> = { A: null, B: null, C: null, D: null }
+
+/** เกณฑ์ตัวเลขที่ใช้คำนวณเกรด */
+export interface GradeThresholds {
+  /** A = ส่งสำเร็จ ≥ N ครั้ง */
+  aDelivered: number
+  /** B = ส่งสำเร็จ ≥ N ครั้ง (และน้อยกว่า aDelivered) */
+  bDelivered: number
+  /** D = ตีกลับ ≥ N ครั้ง */
+  dReturned: number
+}
+
+export const DEFAULT_GRADE_THRESHOLDS: GradeThresholds = {
+  aDelivered: 5,
+  bDelivered: 1,
+  dReturned: 2,
+}
 
 export interface GradeSettings {
   callDays: Record<CustomerGrade, number>
   cardLimit: Record<CustomerGrade, number>
   commissionRate: Record<CustomerGrade, number>
+  /** ยอดซื้อสะสมขั้นต่ำ (บาท) — null = ไม่ใช้ในการคำนวณเกรด */
+  minPurchase: Record<CustomerGrade, number | null>
+  /** ☑ ไม่นำเข้าคิวโทรอัตโนมัติ — Grade D = true เป็นค่าเริ่มต้น */
+  excludeFromQueue: Record<CustomerGrade, boolean>
+  /** เกณฑ์ตัวเลขที่ใช้คำนวณเกรด (ส่งสำเร็จ/ตีกลับ) */
+  thresholds: GradeThresholds
 }
 
 export const DEFAULT_GRADE_SETTINGS: GradeSettings = {
   callDays: { ...GRADE_CALL_DAYS },
   cardLimit: { ...GRADE_CARD_LIMIT },
   commissionRate: { ...GRADE_COMMISSION_RATE },
+  minPurchase: { ...GRADE_MIN_PURCHASE },
+  excludeFromQueue: { A: false, B: false, C: false, D: true },
+  thresholds: { ...DEFAULT_GRADE_THRESHOLDS },
+}
+
+/* ============================================================
+ * CUSTOMER ACTIVITY STATUS (auto-computed, separate from Grade)
+ * ============================================================ */
+export type CustomerActivityStatus = 'active' | 'inactive' | 'returned'
+
+export const ACTIVITY_STATUS_LABEL: Record<CustomerActivityStatus, string> = {
+  active: 'Active', inactive: 'Inactive', returned: 'Returned',
+}
+export const ACTIVITY_STATUS_TITLE: Record<CustomerActivityStatus, string> = {
+  active: 'ใช้งานอยู่', inactive: 'ไม่เคลื่อนไหว', returned: 'พัสดุตีกลับ',
+}
+export const ACTIVITY_STATUS_DESCRIPTION: Record<CustomerActivityStatus, string> = {
+  active: 'มีการซื้อภายใน 180 วัน',
+  inactive: 'ไม่มีการซื้อเกิน 180 วัน',
+  returned: 'มีออเดอร์ตีกลับล่าสุด',
+}
+export const ACTIVITY_STATUS_COLOR: Record<CustomerActivityStatus, string> = {
+  active: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+  inactive: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+  returned: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
+}
+export const ACTIVITY_STATUS_EMOJI: Record<CustomerActivityStatus, string> = {
+  active: '🟢', inactive: '⚪', returned: '🔴',
+}
+
+export const ACTIVITY_INACTIVE_DAYS = 180
+
+/**
+ * คำนวณเกรดลูกค้า — Calculation Priority (ลำดับใน code ต้องเช็ค D ก่อน):
+ *  1. ตีกลับ ≥ dReturned ครั้ง → D
+ *  2. ส่งสำเร็จ ≥ aDelivered ครั้ง → A
+ *  3. ส่งสำเร็จ ≥ bDelivered ครั้ง → B
+ *  4. ยังไม่เคยส่งสำเร็จ → C
+ * เกณฑ์ทั้งหมดอ่านจาก settings.thresholds — กำหนดได้จากหน้า Admin
+ */
+export function computeCustomerGrade(opts: {
+  deliveredCount: number
+  returnedCount: number
+  totalAmount: number
+  settings?: GradeSettings
+}): CustomerGrade {
+  const { deliveredCount, returnedCount, totalAmount, settings } = opts
+  const minPurchase = settings?.minPurchase ?? DEFAULT_GRADE_SETTINGS.minPurchase
+  const th = settings?.thresholds ?? DEFAULT_GRADE_THRESHOLDS
+
+  if (returnedCount >= th.dReturned) return 'D'
+  if (deliveredCount >= th.aDelivered) {
+    if (minPurchase.A != null && totalAmount < minPurchase.A) {
+      if (minPurchase.B != null && totalAmount < minPurchase.B) return 'C'
+      return 'B'
+    }
+    return 'A'
+  }
+  if (deliveredCount >= th.bDelivered) {
+    if (minPurchase.B != null && totalAmount < minPurchase.B) return 'C'
+    return 'B'
+  }
+  return 'C'
+}
+
+/**
+ * คำนวณสถานะลูกค้า (Active / Inactive / Returned) จากข้อมูลคำสั่งซื้อ
+ */
+export function computeCustomerActivityStatus(opts: {
+  lastDeliveredAt?: string | null
+  lastReturnedAt?: string | null
+  /** วันที่ใช้เปรียบเทียบ (default: ตอนนี้) */
+  now?: Date
+}): CustomerActivityStatus {
+  const { lastDeliveredAt, lastReturnedAt } = opts
+  const now = opts.now ?? new Date()
+
+  // ตีกลับล่าสุดต้องใหม่กว่าส่งสำเร็จล่าสุด → returned
+  const lastDelivered = lastDeliveredAt ? new Date(lastDeliveredAt).getTime() : 0
+  const lastReturned = lastReturnedAt ? new Date(lastReturnedAt).getTime() : 0
+  if (lastReturned > 0 && lastReturned >= lastDelivered) return 'returned'
+
+  if (lastDelivered === 0) return 'inactive'
+  const daysSince = (now.getTime() - lastDelivered) / 86400000
+  return daysSince <= ACTIVITY_INACTIVE_DAYS ? 'active' : 'inactive'
 }
 
 /* ============================================================
@@ -260,10 +378,13 @@ export interface Customer {
   tags?: string[]
   ownerId?: string
   ownerName?: string
-  totalOrders: number
+  totalOrders: number                  // = จำนวนออเดอร์ส่งสำเร็จ (delivered)
   totalAmount: number
   successRate: number
   cancelCount?: number                 // จำนวนยกเลิก
+  returnedCount?: number               // จำนวนตีกลับ (สะสม)
+  lastDeliveredAt?: string             // วันที่ส่งสำเร็จล่าสุด
+  lastReturnedAt?: string              // วันที่ตีกลับล่าสุด
   lastCallAt?: string
   nextCallAt?: string
   nextCallNote?: string

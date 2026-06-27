@@ -7,6 +7,8 @@ import {
   Customer, CustomerGrade, CustomerStatus,
   GRADE_LABEL, GRADE_COLOR, GRADE_CALL_DAYS, GRADE_EMOJI,
   CUSTOMER_STATUS_LABEL, CUSTOMER_STATUS_COLOR,
+  ACTIVITY_STATUS_LABEL, ACTIVITY_STATUS_COLOR, ACTIVITY_STATUS_EMOJI,
+  computeCustomerActivityStatus,
   hasPermission,
 } from '@/types'
 import { cn, formatDate, formatMoney, generateId, addDays, formatDateTime } from '@/lib/utils'
@@ -228,7 +230,15 @@ export default function CustomersPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 px-4"><Badge label={`${GRADE_EMOJI[c.grade]} ${c.grade}`} className={GRADE_COLOR[c.grade]} /></td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col gap-1 items-start">
+                          <Badge label={`${GRADE_EMOJI[c.grade]} ${c.grade}`} className={GRADE_COLOR[c.grade]} />
+                          {(() => {
+                            const s = computeCustomerActivityStatus({ lastDeliveredAt: c.lastDeliveredAt, lastReturnedAt: c.lastReturnedAt })
+                            return <Badge label={`${ACTIVITY_STATUS_EMOJI[s]} ${ACTIVITY_STATUS_LABEL[s]}`} className={cn('text-[10px]', ACTIVITY_STATUS_COLOR[s])} />
+                          })()}
+                        </div>
+                      </td>
                       <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
                         {c.ownerName ?? <span className="text-amber-500 italic">ยังไม่กำหนด</span>}
                       </td>
@@ -309,8 +319,13 @@ function CustomerDetailPanel({ customer, callLogs, orders, canViewEditHistory, o
             {customer.name.charAt(2) || customer.name.charAt(0)}
           </div>
           <div className="min-w-0">
-            <p className="font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-2">
-              {customer.name} <Badge label={`${GRADE_EMOJI[customer.grade]} ${GRADE_LABEL[customer.grade]}`} className={GRADE_COLOR[customer.grade]} />
+            <p className="font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-2 flex-wrap">
+              {customer.name}
+              <Badge label={`${GRADE_EMOJI[customer.grade]} ${GRADE_LABEL[customer.grade]}`} className={GRADE_COLOR[customer.grade]} />
+              {(() => {
+                const s = computeCustomerActivityStatus({ lastDeliveredAt: customer.lastDeliveredAt, lastReturnedAt: customer.lastReturnedAt })
+                return <Badge label={`${ACTIVITY_STATUS_EMOJI[s]} ${ACTIVITY_STATUS_LABEL[s]}`} className={cn('text-[10px]', ACTIVITY_STATUS_COLOR[s])} />
+              })()}
             </p>
             <p className="text-xs text-slate-500">📞 {customer.phone}</p>
           </div>

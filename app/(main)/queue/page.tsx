@@ -25,8 +25,11 @@ export default function QueuePage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
   const gradeOrder: Record<CustomerGrade, number> = { A: 0, B: 1, C: 2, D: 3 }
+  const excludeFromQueue = state.gradeSettings.excludeFromQueue
 
   let queue = state.customers.filter(c => c.nextCallAt && new Date(c.nextCallAt) <= new Date())
+  // Filter out grades that admin marked as "ไม่นำเข้าคิวโทรอัตโนมัติ"
+  queue = queue.filter(c => !excludeFromQueue[c.grade])
   if (isTele) queue = queue.filter(c => c.ownerId === user?.id)
   queue = queue
     .filter(c => !search || c.name.includes(search) || c.phone.includes(search))

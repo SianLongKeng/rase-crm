@@ -8,14 +8,6 @@ import { homePathForRole } from '@/lib/utils'
 
 type Theme = 'light' | 'dark'
 
-const DEMO_ACCOUNTS = [
-  { role: 'Owner',    emoji: '👑', email: 'owner@cnp.co.th', password: '1234' },
-  { role: 'Admin',    emoji: '🛠️', email: 'admin@cnp.co.th', password: '1234' },
-  { role: 'Telesale', emoji: '📞', email: 'tele1@cnp.co.th', password: '1234' },
-  { role: 'Packing',  emoji: '📦', email: 'pack1@cnp.co.th', password: '1234' },
-  { role: 'Checker',  emoji: '🚚', email: 'check@cnp.co.th', password: '1234' },
-]
-
 export default function LoginPage() {
   const router = useRouter()
   const { state, login } = useApp()
@@ -31,8 +23,18 @@ export default function LoginPage() {
     setLoading(true)
     const ok = await login(em, pw)
     if (ok) {
-      const u = state.users.find(x => x.email === em)
-      router.push(homePathForRole(u?.role))
+      // Use currentUser set by store (works for both Supabase + mock auth)
+      // Read from localStorage as fallback since state may not be flushed yet
+      let role: string | undefined
+      try {
+        const cached = JSON.parse(localStorage.getItem('crm_user') || 'null')
+        role = cached?.role
+      } catch {}
+      if (!role) {
+        const u = state.users.find(x => x.email === em)
+        role = u?.role
+      }
+      router.push(homePathForRole(role))
     }
     else { setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง'); setLoading(false) }
   }
@@ -40,12 +42,6 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     await submitWith(email, password)
-  }
-
-  function fillDemo(acc: typeof DEMO_ACCOUNTS[number]) {
-    setEmail(acc.email)
-    setPassword(acc.password)
-    setError('')
   }
 
   const isDark = theme === 'dark'
@@ -128,53 +124,6 @@ export default function LoginPage() {
               {loading ? '⏳ กำลังเข้าสู่ระบบ...' : '🚀 เข้าสู่ระบบ'}
             </button>
           </form>
-
-          <div className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-800">
-            <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 mb-3 uppercase tracking-wider text-center">
-              🪄 บัญชีทดลอง — กดเพื่อ Autofill
-            </p>
-            <div className="grid grid-cols-3 gap-2 mb-2">
-              {DEMO_ACCOUNTS.slice(0, 3).map(acc => (
-                <button key={acc.role} type="button" onClick={() => fillDemo(acc)}
-                  className="flex flex-col items-center gap-1 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-emerald-200 dark:hover:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all group">
-                  <span className="text-2xl group-hover:scale-110 transition-transform">{acc.emoji}</span>
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{acc.role}</span>
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              {DEMO_ACCOUNTS.slice(3).map(acc => (
-                <button key={acc.role} type="button" onClick={() => fillDemo(acc)}
-                  className="flex flex-col items-center gap-1 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-emerald-200 dark:hover:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all group">
-                  <span className="text-2xl group-hover:scale-110 transition-transform">{acc.emoji}</span>
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{acc.role}</span>
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => submitWith(DEMO_ACCOUNTS[0].email, DEMO_ACCOUNTS[0].password)}
-              disabled={loading}
-              className="w-full text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 rounded-xl py-2 transition-all disabled:opacity-50 mb-2"
-            >
-              ⚡ Auto-login เป็น Owner (Demo)
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (!confirm('รีเซ็ตข้อมูลทั้งหมดกลับเป็น mock data ตัวอย่างใช่หรือไม่?')) return
-                try {
-                  localStorage.removeItem('crm_data')
-                  localStorage.removeItem('crm_user')
-                } catch {}
-                window.location.reload()
-              }}
-              className="w-full text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 bg-slate-50 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-900/20 border border-slate-200 dark:border-slate-700 rounded-xl py-2 transition-all"
-            >
-              🔄 Reset Demo Data (โหลด mock ใหม่ทั้งหมด)
-            </button>
-          </div>
         </div>
       </div>
     </div>

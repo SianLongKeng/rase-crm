@@ -8,6 +8,7 @@ import {
   Permission, PERMISSION_GROUPS, DEFAULT_ROLE_PERMISSIONS,
 } from '@/types'
 import { generateId, formatDateTime, cn } from '@/lib/utils'
+import { supabase, isSupabaseEnabled } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
 const ROLE_COLOR: Record<UserRole, string> = {
@@ -61,8 +62,44 @@ export default function SettingsPage() {
     !search || u.name.includes(search) || u.email.includes(search)
   )
 
-  function handleSaveMember(member: User) {
+  async function handleSaveMember(member: User) {
     const isNew = !state.users.find(u => u.id === member.id)
+
+    // If creating new user via Supabase Auth — call API to create auth account
+    if (isNew && isSupabaseEnabled() && supabase && member.password) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
+        if (!token) {
+          alert('ต้อง login ก่อนสร้างผู้ใช้ใหม่')
+          return
+        }
+        const res = await fetch('/api/admin/create-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            email: member.email,
+            password: member.password,
+            name: member.name,
+            role: member.role,
+            department: member.department,
+            commissionRate: member.commissionRate,
+          }),
+        })
+        const result = await res.json()
+        if (!res.ok) {
+          alert(`สร้างสมาชิกไม่สำเร็จ: ${result.error}`)
+          return
+        }
+        // Use the Supabase user id
+        member = { ...member, id: result.user.id, password: undefined }
+        alert(`✅ สร้างสมาชิก ${member.name} สำเร็จ\n\nกรุณาแจ้ง email + password ให้สมาชิกทาง Line/อื่นๆ`)
+      } catch (e) {
+        alert(`เกิดข้อผิดพลาด: ${e instanceof Error ? e.message : 'unknown'}`)
+        return
+      }
+    }
+
     dispatch({ type: isNew ? 'ADD_USER' : 'UPDATE_USER', payload: member })
     addHistory(isNew ? 'member_added' : 'member_edited',
       `${isNew ? 'เพิ่ม' : 'แก้ไข'}สมาชิก ${member.name}`, member.id, 'user')
@@ -367,9 +404,6 @@ function MemberEditPanel({ initial, users, currentUserId, onSave, onClose }: {
               <Input label="อีเมล *" type="email" value={email} onChange={e => setEmail(e.target.value)} />
               <Input label={isEdit ? 'รหัสผ่านใหม่ (ว่าง = ไม่เปลี่ยน)' : 'รหัสผ่าน *'} type="password" value={password} onChange={e => setPassword(e.target.value)} />
               <Input label="แผนก" value={department} onChange={e => setDepartment(e.target.value)} placeholder="ฝ่ายขาย / คลังสินค้า..." />
-              {role === 'telesale' && (
-                <Input label="เปอร์เซ็นต์ค่าคอม (%)" type="number" value={commissionRate} onChange={e => setCommissionRate(e.target.value)} />
-              )}
               {isSelf && <p className="text-xs text-slate-400 italic">ไม่สามารถเปลี่ยนบทบาทตัวเองได้</p>}
             </>
           )}

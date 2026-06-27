@@ -62,16 +62,16 @@ export default function DashboardPage() {
     const t = new Date(o.deliveredAt ?? o.updatedAt).getTime()
     return t >= rangeStart && t <= rangeEnd
   })
-  const salesToday = ordersToday.reduce((s, o) => s + (o.totalAmount - o.discount), 0) || 9963
-  const salesYest = ordersYest.reduce((s, o) => s + (o.totalAmount - o.discount), 0) || 8350
-  const costToday = ordersToday.reduce((s, o) => s + o.totalCost + (o.shippingFee ?? 0) + (o.codFee ?? 0), 0) || 6816
+  const salesToday = ordersToday.reduce((s, o) => s + (o.totalAmount - o.discount), 0)
+  const salesYest = ordersYest.reduce((s, o) => s + (o.totalAmount - o.discount), 0)
+  const costToday = ordersToday.reduce((s, o) => s + o.totalCost + (o.shippingFee ?? 0) + (o.codFee ?? 0), 0)
   const grossProfitToday = salesToday - costToday
   const netProfitToday = grossProfitToday  // simplified — would subtract commission for net
 
-  const totalCallsToday = callsToday.length || 425
-  const totalCallsYest = callsYest.length || 378
-  const closeRateToday = totalCallsToday > 0 ? (closedToday / totalCallsToday) * 100 : 19.62
-  const closeRateYest = totalCallsYest > 0 ? (closedYest / totalCallsYest) * 100 : 17.99
+  const totalCallsToday = callsToday.length
+  const totalCallsYest = callsYest.length
+  const closeRateToday = totalCallsToday > 0 ? (closedToday / totalCallsToday) * 100 : 0
+  const closeRateYest = totalCallsYest > 0 ? (closedYest / totalCallsYest) * 100 : 0
 
   // Per-product top 5
   type Agg = { name: string; revenue: number }
@@ -149,10 +149,10 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <KpiBox label="ยอดขายวันนี้" value={`฿${formatMoney(salesToday)}`} sub={`เมื่อวาน ฿${formatMoney(salesYest)}`} change={fmtPct(salesToday, salesYest)} positive={salesToday >= salesYest} gradient="from-blue-500 to-blue-600" icon="🛍️" />
           <KpiBox label="โทรทั้งหมด" value={totalCallsToday} sub={`เมื่อวาน ${totalCallsYest}`} change={fmtPct(totalCallsToday, totalCallsYest)} positive gradient="from-orange-500 to-orange-600" icon="📞" />
-          <KpiBox label="รับสาย (คุยได้)" value={answeredToday || 212} sub={`เมื่อวาน ${answeredYest || 189}`} change={fmtPct(answeredToday || 212, answeredYest || 189)} positive gradient="from-teal-500 to-teal-600" icon="🎧" />
-          <KpiBox label="จำนวนออเดอร์" value={ordersToday.length || 83} sub={`เมื่อวาน ${ordersYest.length || 68}`} change={fmtPct(ordersToday.length || 83, ordersYest.length || 68)} positive gradient="from-violet-500 to-violet-600" icon="📋" />
+          <KpiBox label="รับสาย (คุยได้)" value={answeredToday} sub={`เมื่อวาน ${answeredYest}`} change={fmtPct(answeredToday, answeredYest)} positive gradient="from-teal-500 to-teal-600" icon="🎧" />
+          <KpiBox label="จำนวนออเดอร์" value={ordersToday.length} sub={`เมื่อวาน ${ordersYest.length}`} change={fmtPct(ordersToday.length, ordersYest.length)} positive gradient="from-violet-500 to-violet-600" icon="📋" />
           <KpiBox label="อัตราปิดการขาย" value={`${closeRateToday.toFixed(2)}%`} sub={`เมื่อวาน ${closeRateYest.toFixed(2)}%`} change={`+${(closeRateToday - closeRateYest).toFixed(2)}%`} positive gradient="from-rose-500 to-rose-600" icon="🎯" />
-          <KpiBox label="กำไร" value={`฿${formatMoney(grossProfitToday)}`} sub="เป้าหมาย ฿3,000" change={`${Math.round((grossProfitToday / 3000) * 100)}%`} positive gradient="from-emerald-500 to-emerald-600" icon="📈" />
+          <KpiBox label="กำไร" value={`฿${formatMoney(grossProfitToday)}`} sub={`เมื่อวาน ฿${formatMoney(salesYest - ordersYest.reduce((s, o) => s + o.totalCost + (o.shippingFee ?? 0) + (o.codFee ?? 0), 0))}`} change={fmtPct(grossProfitToday, salesYest - ordersYest.reduce((s, o) => s + o.totalCost + (o.shippingFee ?? 0) + (o.codFee ?? 0), 0))} positive={grossProfitToday >= 0} gradient="from-emerald-500 to-emerald-600" icon="📈" />
         </div>
 
         {/* Row 2: การเงินวันนี้ + 4 status cards (5 cards) */}

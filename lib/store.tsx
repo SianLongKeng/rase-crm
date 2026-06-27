@@ -1,16 +1,18 @@
 'use client'
 
-import React, { createContext, useContext, useReducer, useEffect } from 'react'
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react'
 import {
-  User, Customer, Product, CallLog, Order, OrderItem, HistoryLog,
+  User, UserRole, Customer, Product, CallLog, Order, OrderItem, HistoryLog,
   CustomerGrade, GRADE_CALL_DAYS, GRADE_COMMISSION_RATE,
   OrderStatus, Carrier, OrderShippingInfo, EditHistoryEntry,
   PaymentMethod, GradeSettings, DEFAULT_GRADE_SETTINGS,
   ShippingProfile, resolveOrderShipping,
-  computeCommission,
+  computeCommission, computeCustomerGrade,
 } from '@/types'
 import { generateId, addDays } from './utils'
 import { MOCK_USERS, MOCK_PRODUCTS, MOCK_CUSTOMERS, MOCK_CALL_LOGS, MOCK_ORDERS, MOCK_HISTORY, MOCK_SHIPPING_PROFILES } from './mock-data'
+import { supabase, isSupabaseEnabled } from './supabase'
+import * as ds from './data-service'
 
 interface AppState {
   currentUser: User | null
@@ -60,22 +62,26 @@ function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SET_USER': return { ...state, currentUser: action.payload }
     case 'SET_DATA': return { ...state, ...action.payload }
-    case 'ADD_USER': return { ...state, users: [...state.users, action.payload] }
+    case 'ADD_USER': return state.users.some(u => u.id === action.payload.id) ? state : { ...state, users: [...state.users, action.payload] }
     case 'UPDATE_USER': return { ...state, users: state.users.map(u => u.id === action.payload.id ? action.payload : u) }
     case 'DELETE_USER': return { ...state, users: state.users.filter(u => u.id !== action.payload) }
-    case 'ADD_CUSTOMER': return { ...state, customers: [action.payload, ...state.customers] }
+    case 'ADD_CUSTOMER': return state.customers.some(c => c.id === action.payload.id) ? state : { ...state, customers: [action.payload, ...state.customers] }
     case 'UPDATE_CUSTOMER': return { ...state, customers: state.customers.map(c => c.id === action.payload.id ? action.payload : c) }
     case 'DELETE_CUSTOMER': return { ...state, customers: state.customers.filter(c => c.id !== action.payload) }
-    case 'BULK_ADD_CUSTOMERS': return { ...state, customers: [...action.payload, ...state.customers] }
-    case 'ADD_PRODUCT': return { ...state, products: [action.payload, ...state.products] }
+    case 'BULK_ADD_CUSTOMERS': {
+      const existingIds = new Set(state.customers.map(c => c.id))
+      const newOnes = action.payload.filter(c => !existingIds.has(c.id))
+      return { ...state, customers: [...newOnes, ...state.customers] }
+    }
+    case 'ADD_PRODUCT': return state.products.some(p => p.id === action.payload.id) ? state : { ...state, products: [action.payload, ...state.products] }
     case 'UPDATE_PRODUCT': return { ...state, products: state.products.map(p => p.id === action.payload.id ? action.payload : p) }
     case 'DELETE_PRODUCT': return { ...state, products: state.products.filter(p => p.id !== action.payload) }
-    case 'ADD_CALL_LOG': return { ...state, callLogs: [action.payload, ...state.callLogs] }
-    case 'ADD_ORDER': return { ...state, orders: [action.payload, ...state.orders] }
+    case 'ADD_CALL_LOG': return state.callLogs.some(c => c.id === action.payload.id) ? state : { ...state, callLogs: [action.payload, ...state.callLogs] }
+    case 'ADD_ORDER': return state.orders.some(o => o.id === action.payload.id) ? state : { ...state, orders: [action.payload, ...state.orders] }
     case 'UPDATE_ORDER': return { ...state, orders: state.orders.map(o => o.id === action.payload.id ? action.payload : o) }
-    case 'ADD_HISTORY': return { ...state, history: [action.payload, ...state.history] }
+    case 'ADD_HISTORY': return state.history.some(h => h.id === action.payload.id) ? state : { ...state, history: [action.payload, ...state.history] }
     case 'SET_GRADE_SETTINGS': return { ...state, gradeSettings: action.payload }
-    case 'ADD_SHIPPING_PROFILE': return { ...state, shippingProfiles: [...state.shippingProfiles, action.payload] }
+    case 'ADD_SHIPPING_PROFILE': return state.shippingProfiles.some(p => p.id === action.payload.id) ? state : { ...state, shippingProfiles: [...state.shippingProfiles, action.payload] }
     case 'UPDATE_SHIPPING_PROFILE': return { ...state, shippingProfiles: state.shippingProfiles.map(p => p.id === action.payload.id ? action.payload : p) }
     case 'DELETE_SHIPPING_PROFILE': return { ...state, shippingProfiles: state.shippingProfiles.filter(p => p.id !== action.payload) }
     case 'SET_LOADING': return { ...state, isLoading: action.payload }
@@ -155,6 +161,7 @@ interface AppCtx {
   bulkImportCustomers: (rows: Array<Partial<Customer> & { name: string; phone: string }>) => number
   bulkImportOrders: (rows: OrderImportRow[]) => { orders: number; newCustomers: number }
   updateGradeSettings: (settings: GradeSettings) => void
+  recalculateAllGrades: () => { updated: number; total: number }
 
   saveShippingProfile: (profile: ShippingProfile) => void
   deleteShippingProfile: (id: string) => void
@@ -238,11 +245,14 @@ function saveData(state: AppState) {
   } catch {}
 }
 
-function deriveGrade(totalOrders: number, successRate: number): CustomerGrade {
-  if (totalOrders >= 8 && successRate >= 85) return 'A'
-  if (totalOrders >= 3 && successRate >= 60) return 'B'
-  if (totalOrders >= 1) return 'C'
-  return 'D'
+// Legacy helper — kept for backward compat. New logic uses computeCustomerGrade from @/types.
+function deriveGrade(
+  deliveredCount: number,
+  returnedCount: number,
+  totalAmount: number,
+  settings?: GradeSettings,
+): CustomerGrade {
+  return computeCustomerGrade({ deliveredCount, returnedCount, totalAmount, settings })
 }
 
 /** Generate human-readable order ID: ORD680527-001 (Thai year + month-day + sequence) */
@@ -258,35 +268,202 @@ function nextOrderId(existing: Order[]): string {
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState)
+  const [state, dispatchRaw] = useReducer(reducer, initialState)
 
-  useEffect(() => {
-    const stored = localStorage.getItem('crm_user')
-    if (stored) {
-      try { dispatch({ type: 'SET_USER', payload: JSON.parse(stored) }) } catch {}
-    }
-    const saved = loadData()
-    dispatch({
-      type: 'SET_DATA',
-      payload: {
-        users: saved.users?.length ? saved.users : MOCK_USERS,
-        customers: saved.customers?.length ? saved.customers : MOCK_CUSTOMERS,
-        products: saved.products?.length ? saved.products : MOCK_PRODUCTS,
-        callLogs: saved.callLogs?.length ? saved.callLogs : MOCK_CALL_LOGS,
-        orders: saved.orders?.length ? saved.orders : MOCK_ORDERS,
-        history: saved.history?.length ? saved.history : MOCK_HISTORY,
-        gradeSettings: saved.gradeSettings ?? DEFAULT_GRADE_SETTINGS,
-        shippingProfiles: saved.shippingProfiles?.length ? saved.shippingProfiles : MOCK_SHIPPING_PROFILES,
-      },
-    })
-    dispatch({ type: 'SET_LOADING', payload: false })
+  // Wrap dispatch to also persist changes to Supabase (fire-and-forget)
+  const dispatch = useCallback((action: AppAction) => {
+    dispatchRaw(action)
+    if (!isSupabaseEnabled() || !supabase) return
+    ;(async () => {
+      try {
+        switch (action.type) {
+          case 'ADD_PRODUCT':
+          case 'UPDATE_PRODUCT':
+            await ds.upsertProduct(action.payload); break
+          case 'DELETE_PRODUCT':
+            await ds.deleteProduct(action.payload); break
+          case 'ADD_CUSTOMER':
+          case 'UPDATE_CUSTOMER':
+            await ds.upsertCustomer(action.payload); break
+          case 'DELETE_CUSTOMER':
+            await ds.deleteCustomer(action.payload); break
+          case 'BULK_ADD_CUSTOMERS':
+            await ds.bulkInsertCustomers(action.payload); break
+          case 'ADD_CALL_LOG':
+            await ds.insertCallLog(action.payload); break
+          case 'ADD_ORDER':
+          case 'UPDATE_ORDER':
+            await ds.upsertOrder(action.payload); break
+          case 'ADD_HISTORY':
+            await ds.insertHistory(action.payload); break
+          case 'ADD_SHIPPING_PROFILE':
+          case 'UPDATE_SHIPPING_PROFILE':
+            await ds.upsertShippingProfile(action.payload); break
+          case 'DELETE_SHIPPING_PROFILE':
+            await ds.deleteShippingProfile(action.payload); break
+          case 'SET_GRADE_SETTINGS':
+            await ds.updateGradeSettings(action.payload); break
+          case 'UPDATE_USER':
+            await ds.updateUserProfile(action.payload); break
+        }
+      } catch (e) {
+        console.warn('Supabase persist failed:', action.type, e)
+      }
+    })()
   }, [])
 
   useEffect(() => {
-    if (!state.isLoading) saveData(state)
+    let cleanupChannel: (() => void) | null = null
+    async function init() {
+      // ─── Auth: prefer Supabase session ───
+      if (isSupabaseEnabled() && supabase) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single()
+          if (profile) {
+            const supaUser: User = {
+              id: session.user.id,
+              name: profile.name ?? session.user.email?.split('@')[0] ?? 'User',
+              email: session.user.email ?? '',
+              role: (profile.role ?? 'telesale') as UserRole,
+              department: profile.department ?? undefined,
+              phone: profile.phone ?? undefined,
+              commissionRate: profile.commission_rate ?? undefined,
+              permissions: profile.permissions ?? undefined,
+              active: profile.active !== false,
+            }
+            dispatchRaw({ type: 'SET_USER', payload: supaUser })
+            localStorage.setItem('crm_user', JSON.stringify(supaUser))
+          }
+        }
+        // Subscribe to auth state changes for cross-tab sync
+        supabase.auth.onAuthStateChange((event) => {
+          if (event === 'SIGNED_OUT') {
+            localStorage.removeItem('crm_user')
+            dispatchRaw({ type: 'SET_USER', payload: null })
+          }
+        })
+
+        // ─── Data: load from Supabase ───
+        const snapshot = await ds.loadAllData()
+        if (snapshot) {
+          dispatchRaw({
+            type: 'SET_DATA',
+            payload: {
+              users: snapshot.users.length ? snapshot.users : MOCK_USERS,
+              customers: snapshot.customers,
+              products: snapshot.products,
+              callLogs: snapshot.callLogs,
+              orders: snapshot.orders,
+              history: snapshot.history,
+              gradeSettings: snapshot.gradeSettings,
+              shippingProfiles: snapshot.shippingProfiles,
+            },
+          })
+        }
+
+        // ─── Realtime: subscribe to all data tables ───
+        const channel = supabase.channel('cnp-crm-realtime')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload) => {
+            if (payload.eventType === 'INSERT') dispatchRaw({ type: 'ADD_CUSTOMER', payload: ds.rowToCustomer(payload.new) })
+            else if (payload.eventType === 'UPDATE') dispatchRaw({ type: 'UPDATE_CUSTOMER', payload: ds.rowToCustomer(payload.new) })
+            else if (payload.eventType === 'DELETE') dispatchRaw({ type: 'DELETE_CUSTOMER', payload: (payload.old as { id: string }).id })
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+            if (payload.eventType === 'INSERT') dispatchRaw({ type: 'ADD_PRODUCT', payload: ds.rowToProduct(payload.new) })
+            else if (payload.eventType === 'UPDATE') dispatchRaw({ type: 'UPDATE_PRODUCT', payload: ds.rowToProduct(payload.new) })
+            else if (payload.eventType === 'DELETE') dispatchRaw({ type: 'DELETE_PRODUCT', payload: (payload.old as { id: string }).id })
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+            if (payload.eventType === 'INSERT') dispatchRaw({ type: 'ADD_ORDER', payload: ds.rowToOrder(payload.new) })
+            else if (payload.eventType === 'UPDATE') dispatchRaw({ type: 'UPDATE_ORDER', payload: ds.rowToOrder(payload.new) })
+          })
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_logs' }, (payload) => {
+            dispatchRaw({ type: 'ADD_CALL_LOG', payload: ds.rowToCallLog(payload.new) })
+          })
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'history_logs' }, (payload) => {
+            dispatchRaw({ type: 'ADD_HISTORY', payload: ds.rowToHistory(payload.new) })
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'shipping_profiles' }, (payload) => {
+            if (payload.eventType === 'INSERT') dispatchRaw({ type: 'ADD_SHIPPING_PROFILE', payload: ds.rowToShippingProfile(payload.new) })
+            else if (payload.eventType === 'UPDATE') dispatchRaw({ type: 'UPDATE_SHIPPING_PROFILE', payload: ds.rowToShippingProfile(payload.new) })
+            else if (payload.eventType === 'DELETE') dispatchRaw({ type: 'DELETE_SHIPPING_PROFILE', payload: (payload.old as { id: string }).id })
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'grade_settings' }, (payload) => {
+            if (payload.new) dispatchRaw({ type: 'SET_GRADE_SETTINGS', payload: ds.rowToGradeSettings(payload.new) })
+          })
+          .subscribe()
+
+        // Cleanup on unmount
+        cleanupChannel = () => {
+          supabase?.removeChannel(channel)
+        }
+      } else {
+        // ─── Fallback: localStorage user + mock data ───
+        const stored = localStorage.getItem('crm_user')
+        if (stored) {
+          try { dispatchRaw({ type: 'SET_USER', payload: JSON.parse(stored) }) } catch {}
+        }
+        const saved = loadData()
+        dispatchRaw({
+          type: 'SET_DATA',
+          payload: {
+            users: saved.users?.length ? saved.users : MOCK_USERS,
+            customers: saved.customers?.length ? saved.customers : MOCK_CUSTOMERS,
+            products: saved.products?.length ? saved.products : MOCK_PRODUCTS,
+            callLogs: saved.callLogs?.length ? saved.callLogs : MOCK_CALL_LOGS,
+            orders: saved.orders?.length ? saved.orders : MOCK_ORDERS,
+            history: saved.history?.length ? saved.history : MOCK_HISTORY,
+            gradeSettings: saved.gradeSettings ?? DEFAULT_GRADE_SETTINGS,
+            shippingProfiles: saved.shippingProfiles?.length ? saved.shippingProfiles : MOCK_SHIPPING_PROFILES,
+          },
+        })
+      }
+      dispatchRaw({ type: 'SET_LOADING', payload: false })
+    }
+    init()
+    return () => { if (cleanupChannel) cleanupChannel() }
+  }, [])
+
+  useEffect(() => {
+    // Only persist to localStorage in mock mode; Supabase is source of truth otherwise
+    if (!state.isLoading && !isSupabaseEnabled()) saveData(state)
   }, [state])
 
   async function login(email: string, password: string): Promise<boolean> {
+    // ─── Supabase Auth (if configured) ───
+    if (isSupabaseEnabled() && supabase) {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error || !data.user) return false
+
+      // Fetch profile from profiles table
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .single()
+
+      const supaUser: User = {
+        id: data.user.id,
+        name: profile?.name ?? data.user.email?.split('@')[0] ?? 'User',
+        email: data.user.email ?? email,
+        role: (profile?.role ?? 'telesale') as UserRole,
+        department: profile?.department ?? undefined,
+        phone: profile?.phone ?? undefined,
+        commissionRate: profile?.commission_rate ?? undefined,
+        permissions: profile?.permissions ?? undefined,
+        active: profile?.active !== false,
+      }
+      dispatch({ type: 'SET_USER', payload: supaUser })
+      localStorage.setItem('crm_user', JSON.stringify(supaUser))
+      return true
+    }
+
+    // ─── Fallback: mock auth (localStorage only) ───
     const user = state.users.find(u => u.email === email && u.password === password)
     if (!user) return false
     const safe = { ...user, password: undefined }
@@ -295,7 +472,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return true
   }
 
-  function logout() {
+  async function logout() {
+    if (isSupabaseEnabled() && supabase) {
+      await supabase.auth.signOut()
+    }
     localStorage.removeItem('crm_user')
     dispatch({ type: 'SET_USER', payload: null })
   }
@@ -612,9 +792,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const newTotal = status === 'delivered' ? customer.totalOrders + 1 : customer.totalOrders
       const newAmount = status === 'delivered' ? customer.totalAmount + (order.totalAmount - order.discount) : customer.totalAmount
       const newCancel = status === 'cancelled' ? (customer.cancelCount ?? 0) + 1 : (customer.cancelCount ?? 0)
-      const denom = newTotal + (status === 'returned' ? 1 : 0)
+      const newReturned = status === 'returned' ? (customer.returnedCount ?? 0) + 1 : (customer.returnedCount ?? 0)
+      const denom = newTotal + newReturned
       const successRate = denom > 0 ? Math.round((newTotal / denom) * 100) : 0
-      const newGrade = deriveGrade(newTotal, successRate)
+      const newGrade = deriveGrade(newTotal, newReturned, newAmount, state.gradeSettings)
       const gradeChanged = newGrade !== customer.grade
       dispatch({
         type: 'UPDATE_CUSTOMER',
@@ -624,6 +805,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           totalAmount: newAmount,
           successRate,
           cancelCount: newCancel,
+          returnedCount: newReturned,
+          lastDeliveredAt: status === 'delivered' ? now : customer.lastDeliveredAt,
+          lastReturnedAt: status === 'returned' ? now : customer.lastReturnedAt,
           grade: newGrade,
           updatedAt: now,
         }
@@ -764,6 +948,67 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addHistory('permission_changed', 'แก้ไขการตั้งค่าเกรดลูกค้า')
   }
 
+  /**
+   * คำนวณเกรดลูกค้าทุกคนใหม่ตามเกณฑ์ปัจจุบัน + นับ delivered/returned จากออเดอร์จริง
+   * เซฟลง DB เฉพาะคนที่เกรดเปลี่ยน
+   */
+  function recalculateAllGrades(): { updated: number; total: number } {
+    const now = new Date().toISOString()
+    let updated = 0
+    for (const c of state.customers) {
+      const myOrders = state.orders.filter(o => o.customerId === c.id)
+      const delivered = myOrders.filter(o => o.status === 'delivered')
+      const returned = myOrders.filter(o => o.status === 'returned')
+      const deliveredCount = delivered.length
+      const returnedCount = returned.length
+      const totalAmount = delivered.reduce((s, o) => s + (o.totalAmount - o.discount), 0)
+      const lastDelivered = delivered
+        .map(o => o.deliveredAt ?? o.updatedAt)
+        .filter(Boolean)
+        .sort()
+        .at(-1)
+      const lastReturned = returned
+        .map(o => o.returnedAt ?? o.updatedAt)
+        .filter(Boolean)
+        .sort()
+        .at(-1)
+      const newGrade = computeCustomerGrade({
+        deliveredCount, returnedCount, totalAmount, settings: state.gradeSettings,
+      })
+      const denom = deliveredCount + returnedCount
+      const successRate = denom > 0 ? Math.round((deliveredCount / denom) * 100) : 0
+      const changed =
+        newGrade !== c.grade ||
+        (c.returnedCount ?? 0) !== returnedCount ||
+        (c.totalOrders ?? 0) !== deliveredCount ||
+        c.lastDeliveredAt !== lastDelivered ||
+        c.lastReturnedAt !== lastReturned
+      if (!changed) continue
+      updated++
+      dispatch({
+        type: 'UPDATE_CUSTOMER',
+        payload: {
+          ...c,
+          totalOrders: deliveredCount,
+          totalAmount,
+          successRate,
+          returnedCount,
+          lastDeliveredAt: lastDelivered ?? c.lastDeliveredAt,
+          lastReturnedAt: lastReturned ?? c.lastReturnedAt,
+          grade: newGrade,
+          updatedAt: now,
+        }
+      })
+      if (newGrade !== c.grade) {
+        addHistory('customer_grade_changed', `${c.name} เปลี่ยน Grade เป็น ${newGrade} (recalculate)`, c.id, 'customer')
+      }
+    }
+    if (updated > 0) {
+      addHistory('permission_changed', `คำนวณเกรดใหม่ทั้งระบบ — อัปเดต ${updated}/${state.customers.length} คน`)
+    }
+    return { updated, total: state.customers.length }
+  }
+
   function saveShippingProfile(profile: ShippingProfile) {
     const exists = state.shippingProfiles.find(p => p.id === profile.id)
     dispatch({ type: exists ? 'UPDATE_SHIPPING_PROFILE' : 'ADD_SHIPPING_PROFILE', payload: profile })
@@ -781,7 +1026,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       state, dispatch, login, logout, addHistory,
       completeCall, updateOrderStatus, copyOrderData,
       assignOwner, setCustomerGrade, updateCustomerWithHistory,
-      bulkImportCustomers, bulkImportOrders, updateGradeSettings,
+      bulkImportCustomers, bulkImportOrders, updateGradeSettings, recalculateAllGrades,
       saveShippingProfile, deleteShippingProfile,
     }}>
       {children}
