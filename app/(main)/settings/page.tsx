@@ -146,7 +146,6 @@ export default function SettingsPage() {
                   <th className="text-left py-3 px-4">สมาชิก</th>
                   <th className="text-left py-3 px-4">บทบาท</th>
                   <th className="text-left py-3 px-4">แผนก</th>
-                  <th className="text-right py-3 px-4">เปอร์เซ็นต์คอม</th>
                   <th className="text-center py-3 px-4">สถานะ</th>
                   <th className="py-3 px-4"></th>
                 </tr>
@@ -173,9 +172,6 @@ export default function SettingsPage() {
                       <Badge label={`${ROLE_EMOJI[u.role]} ${ROLE_LABEL[u.role]}`} className={ROLE_COLOR[u.role]} />
                     </td>
                     <td className="py-3 px-4 text-slate-500 dark:text-slate-400">{u.department ?? '—'}</td>
-                    <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-200 font-semibold">
-                      {u.role === 'telesale' && u.commissionRate != null ? `${u.commissionRate}%` : '—'}
-                    </td>
                     <td className="py-3 px-4 text-center">
                       <button onClick={() => toggleActive(u)}
                         className={cn('text-xs px-2 py-0.5 rounded-full font-semibold',
