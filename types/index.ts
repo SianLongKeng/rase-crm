@@ -170,7 +170,7 @@ export const GRADE_COLOR: Record<CustomerGrade, string> = {
   D: 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-700',
 }
 export const GRADE_EMOJI: Record<CustomerGrade, string> = { A: '🏆', B: '💎', C: '🆕', D: '⚠️' }
-export const GRADE_CALL_DAYS: Record<CustomerGrade, number> = { A: 21, B: 30, C: 45, D: 60 }
+export const GRADE_CALL_DAYS: Record<CustomerGrade, number> = { A: 21, B: 30, C: 40, D: 60 }
 export const GRADE_CARD_LIMIT: Record<CustomerGrade, number> = { A: 70, B: 35, C: 60, D: 40 }
 export const GRADE_COMMISSION_RATE: Record<CustomerGrade, number> = { A: 7, B: 5, C: 4, D: 3 }
 /** ยอดซื้อสะสมขั้นต่ำ (บาท) ต่อเกรด — null = ไม่ใช้ในการคำนวณ */

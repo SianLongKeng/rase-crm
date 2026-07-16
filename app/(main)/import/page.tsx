@@ -5,9 +5,9 @@ import { useApp } from '@/lib/store'
 import { Button, Card, PageHeader, Select } from '@/components/ui'
 import {
   Customer, CustomerGrade, Carrier, CARRIER_LABEL, OrderStatus, PaymentMethod,
-  ORDER_STATUS_LABEL,
+  ORDER_STATUS_LABEL, GRADE_CALL_DAYS,
 } from '@/types'
-import { cn } from '@/lib/utils'
+import { cn, addDays } from '@/lib/utils'
 import * as XLSX from 'xlsx'
 
 const GRADE_VALUES: CustomerGrade[] = ['A', 'B', 'C', 'D']
@@ -90,7 +90,7 @@ function getCell(r: Record<string, unknown>, ...keys: string[]): string {
 
 type CustomerRow = {
   name: string; phone: string; address?: string; grade?: CustomerGrade; notes?: string
-  lastProductName?: string; lastProductPrice?: number
+  lastProductName?: string; lastProductPrice?: number; lastOrderDate?: string
   _valid: boolean; _reason?: string
 }
 
@@ -144,6 +144,7 @@ export default function ImportPage() {
       const lastProductName = getCell(r, 'product', 'สินค้า', 'ชื่อสินค้า', 'last_product')
       const lastProductPriceStr = getCell(r, 'price', 'ราคา', 'ราคาขายล่าสุด', 'last_price')
       const lastProductPrice = lastProductPriceStr ? Number(lastProductPriceStr.replace(/,/g, '')) : undefined
+      const lastOrderDate = parseDate(getCell(r, 'วันที่สั่งล่าสุด', 'วันที่สั่งซื้อล่าสุด', 'lastOrderDate', 'last_order_date'))
       const phoneKey = phone.replace(/\D/g, '')
       let valid = true, reason: string | undefined
       if (!name) { valid = false; reason = 'ขาดชื่อ' }
@@ -154,6 +155,7 @@ export default function ImportPage() {
         grade: normalizeGrade(gradeRaw), notes: notes || undefined,
         lastProductName: lastProductName || undefined,
         lastProductPrice: lastProductPrice && lastProductPrice > 0 ? lastProductPrice : undefined,
+        lastOrderDate,
         _valid: valid, _reason: reason,
       }
     })
@@ -251,12 +253,18 @@ export default function ImportPage() {
     if (mode === 'customer') {
       const owner = telesales.find(u => u.id === defaultOwnerId)
       const valid = customerRows.filter(r => r._valid).map<Partial<Customer> & { name: string; phone: string }>(r => {
+        const grade = r.grade ?? defaultGrade
+        // Next call = last order date (if given) + call-cycle days for the grade; else from today
+        const baseDate = r.lastOrderDate ? new Date(r.lastOrderDate) : new Date()
+        const nextCallAt = addDays(baseDate, GRADE_CALL_DAYS[grade])
+        const dateInfo = r.lastOrderDate ? `(สั่งล่าสุด ${new Date(r.lastOrderDate).toLocaleDateString('th-TH')})` : ''
         const lastInfo = (r.lastProductName || r.lastProductPrice)
-          ? `[ซื้อล่าสุด: ${r.lastProductName ?? ''}${r.lastProductPrice ? ` ฿${r.lastProductPrice.toLocaleString()}` : ''}]`
-          : ''
+          ? `[ซื้อล่าสุด: ${r.lastProductName ?? ''}${r.lastProductPrice ? ` ฿${r.lastProductPrice.toLocaleString()}` : ''}${dateInfo ? ` ${dateInfo}` : ''}]`
+          : (dateInfo ? `[ซื้อล่าสุด: ${dateInfo}]` : '')
         return {
-          name: r.name, phone: r.phone, address: r.address, grade: r.grade ?? defaultGrade,
+          name: r.name, phone: r.phone, address: r.address, grade,
           ownerId: owner?.id, ownerName: owner?.name,
+          nextCallAt,
           notes: [r.notes, lastInfo].filter(Boolean).join(' '),
         }
       })
@@ -286,8 +294,8 @@ export default function ImportPage() {
     const wb = XLSX.utils.book_new()
     if (mode === 'customer') {
       const template = [
-        { name: 'คุณตัวอย่าง หนึ่ง', phone: '081-000-0001', address: 'กรุงเทพฯ', grade: 'D', 'ชื่อสินค้า': 'วิตามิน C 1000mg', 'ราคาขายล่าสุด': 590, notes: 'ลูกค้าใหม่' },
-        { name: 'คุณตัวอย่าง สอง', phone: '082-000-0002', address: 'เชียงใหม่', grade: 'C', 'ชื่อสินค้า': 'คอลลาเจน', 'ราคาขายล่าสุด': 1290, notes: '' },
+        { name: 'คุณตัวอย่าง หนึ่ง', phone: '081-000-0001', address: 'กรุงเทพฯ', grade: 'D', 'ชื่อสินค้า': 'วิตามิน C 1000mg', 'ราคาขายล่าสุด': 590, 'วันที่สั่งล่าสุด': '15/06/2025', notes: 'ลูกค้าใหม่' },
+        { name: 'คุณตัวอย่าง สอง', phone: '082-000-0002', address: 'เชียงใหม่', grade: 'C', 'ชื่อสินค้า': 'คอลลาเจน', 'ราคาขายล่าสุด': 1290, 'วันที่สั่งล่าสุด': '20/05/2025', notes: '' },
       ]
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(template), 'ลูกค้า')
       XLSX.writeFile(wb, 'cnp-customer-template.xlsx')
@@ -339,10 +347,10 @@ export default function ImportPage() {
           <p className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-3">ขั้นตอน</p>
           {mode === 'customer' ? (
             <ol className="list-decimal pl-5 text-sm text-slate-600 dark:text-slate-400 space-y-1">
-              <li>โหลด Template หรือเตรียมไฟล์คอลัมน์: <code>name, phone, address, grade, ชื่อสินค้า, ราคาขายล่าสุด, notes</code></li>
+              <li>โหลด Template หรือเตรียมไฟล์คอลัมน์: <code>name, phone, address, grade, ชื่อสินค้า, ราคาขายล่าสุด, วันที่สั่งล่าสุด, notes</code></li>
               <li>เลือกไฟล์ .xlsx / .csv</li>
               <li>เลือก default Owner แล้วกด &quot;นำเข้า&quot;</li>
-              <li>ระบบจะนำ &quot;ชื่อสินค้า&quot; และ &quot;ราคาขายล่าสุด&quot; ไปเก็บใน notes เพื่ออ้างอิงครั้งถัดไป</li>
+              <li>ระบบตั้ง <strong>นัดโทรครั้งถัดไป = วันที่สั่งล่าสุด + จำนวนวันตามเกรด</strong> (A +21, B +30, C +40, D +60 วัน) อัตโนมัติ — ถ้าไม่ใส่วันที่ จะนับจากวันนี้</li>
             </ol>
           ) : (
             <ol className="list-decimal pl-5 text-sm text-slate-600 dark:text-slate-400 space-y-1">

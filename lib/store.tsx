@@ -835,7 +835,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ownerId: r.ownerId,
         ownerName: r.ownerName,
         totalOrders: 0, totalAmount: 0, successRate: 0,
-        nextCallAt: addDays(new Date(), 1),
+        nextCallAt: r.nextCallAt ?? addDays(new Date(), GRADE_CALL_DAYS[r.grade ?? 'D']),
         notes: r.notes,
         createdAt: now, updatedAt: now,
       })
@@ -872,7 +872,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         customer = {
           id: generateId(), name: r.name.trim(), phone: r.phone.trim(), address: r.address,
           grade: 'D', totalOrders: 0, totalAmount: 0, successRate: 0,
-          nextCallAt: addDays(new Date(), 1), notes: r.notes, createdAt: nowIso, updatedAt: nowIso,
+          nextCallAt: addDays(r.orderDate ? new Date(r.orderDate) : new Date(), GRADE_CALL_DAYS['D']),
+          notes: r.notes, createdAt: nowIso, updatedAt: nowIso,
         }
         customersByPhone.set(phoneKey, customer)
         newCustomers.push(customer)
