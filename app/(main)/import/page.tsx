@@ -168,8 +168,15 @@ export default function ImportPage() {
       const name = getCell(r, 'name', 'ชื่อ', 'ชื่อลูกค้า', 'ลูกค้า')
       const phone = getCell(r, 'phone', 'เบอร์', 'เบอร์โทร')
       const address = getCell(r, 'address', 'ที่อยู่')
-      const productSku = getCell(r, 'sku', 'รหัสสินค้า', 'product_sku')
-      const productName = getCell(r, 'product', 'สินค้า', 'product_name', 'ชื่อสินค้า')
+      // MyOrder's newer export names these "รหัสสินค้า (จำนวนชิ้น)" / "สินค้า (จำนวนชิ้น)"
+      // and embeds the quantity as a trailing "(N)" inside the cell, e.g.
+      // "ยานวดสมุนไพร 1 แถม 1 ขวด (1)" / "A002-1 (1)"
+      const productSkuRaw = getCell(r, 'sku', 'รหัสสินค้า', 'product_sku', 'รหัสสินค้า (จำนวนชิ้น)')
+      const productNameRaw = getCell(r, 'product', 'สินค้า', 'product_name', 'ชื่อสินค้า', 'สินค้า (จำนวนชิ้น)')
+      const trailingQty = (s: string) => { const m = s.match(/\((\d+)\)\s*$/); return m ? Number(m[1]) : undefined }
+      const embeddedQty = trailingQty(productNameRaw) ?? trailingQty(productSkuRaw)
+      const productSku = productSkuRaw.replace(/\s*\(\d+\)\s*$/, '').trim()
+      const productName = productNameRaw.replace(/\s*\(\d+\)\s*$/, '').trim()
       const qtyStr = getCell(r, 'quantity', 'จำนวน', 'จำนวนชิ้น', 'qty')
       const weightStr = getCell(r, 'weight', 'น้ำหนัก', 'น้ำหนัก (กก.)', 'weight_kg')
       const trackingRaw = getCell(r, 'tracking', 'tracking_no', 'tracking no.', 'tracking no', 'เลขพัสดุ', 'เลข tracking')
@@ -182,7 +189,7 @@ export default function ImportPage() {
       const createdBy = getCell(r, 'createdBy', 'สร้างออเดอร์โดย', 'สร้างโดย')
       const notes = getCell(r, 'notes', 'หมายเหตุ')
 
-      const qty = Number(qtyStr) || 1
+      const qty = Number(qtyStr) || embeddedQty || 1
       const weight = Number(weightStr) || undefined
       const discount = Number(discountStr.replace(/,/g, '')) || 0
       const shippingFee = Number(shippingFeeStr.replace(/,/g, '')) || undefined
