@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useState } from 'react'
 import {
   User, UserRole, Customer, Product, CallLog, Order, OrderItem, HistoryLog,
   CustomerGrade, GRADE_CALL_DAYS, GRADE_COMMISSION_RATE,
@@ -269,6 +269,8 @@ function nextOrderId(existing: Order[]): string {
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatchRaw] = useReducer(reducer, initialState)
+  // Surfaces a red banner when a Supabase write fails (instead of failing silently)
+  const [syncError, setSyncError] = useState<string | null>(null)
 
   // Wrap dispatch to also persist changes to Supabase (fire-and-forget)
   const dispatch = useCallback((action: AppAction) => {
@@ -307,7 +309,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             await ds.updateUserProfile(action.payload); break
         }
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
         console.warn('Supabase persist failed:', action.type, e)
+        setSyncError(`บันทึกลงระบบไม่สำเร็จ (${action.type}): ${msg}`)
       }
     })()
   }, [])
@@ -935,8 +939,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })
     }
 
-    if (newCustomers.length) dispatch({ type: 'BULK_ADD_CUSTOMERS', payload: newCustomers })
-    for (const o of newOrders) dispatch({ type: 'ADD_ORDER', payload: o })
+    // Update local state immediately
+    if (newCustomers.length) dispatchRaw({ type: 'BULK_ADD_CUSTOMERS', payload: newCustomers })
+    for (const o of newOrders) dispatchRaw({ type: 'ADD_ORDER', payload: o })
+
+    // Persist to Supabase in the RIGHT ORDER: customers first, then orders
+    // (orders have a foreign key to customers — inserting an order before its
+    // customer exists fails with FK error 23503 and would be lost silently).
+    if (isSupabaseEnabled() && supabase) {
+      void (async () => {
+        try {
+          if (newCustomers.length) await ds.bulkInsertCustomers(newCustomers)
+          if (newOrders.length) await ds.bulkInsertOrders(newOrders)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.warn('Supabase persist failed: bulkImportOrders', e)
+          setSyncError(`นำเข้าออเดอร์ — บันทึกลงระบบไม่สำเร็จ: ${msg}`)
+        }
+      })()
+    }
 
     if (newOrders.length) {
       addHistory('order_created', `นำเข้าออเดอร์ ${newOrders.length} รายการ (ลูกค้าใหม่ ${newCustomers.length})`)
@@ -1031,6 +1052,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       saveShippingProfile, deleteShippingProfile,
     }}>
       {children}
+      {syncError && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] max-w-lg w-[92%] bg-red-600 text-white rounded-xl shadow-2xl px-4 py-3 flex items-start gap-3">
+          <span className="text-lg leading-none">⚠️</span>
+          <div className="flex-1 text-sm">
+            <p className="font-bold">บันทึกลงระบบไม่สำเร็จ</p>
+            <p className="text-red-100 text-xs mt-0.5 break-all">{syncError}</p>
+            <p className="text-red-100 text-[11px] mt-1 opacity-80">ข้อมูลอาจยังไม่ถูกบันทึก — ลองใหม่อีกครั้ง หรือแจ้งผู้ดูแล</p>
+          </div>
+          <button onClick={() => setSyncError(null)} aria-label="ปิด" className="text-white/80 hover:text-white text-lg leading-none">✕</button>
+        </div>
+      )}
     </AppContext.Provider>
   )
 }
