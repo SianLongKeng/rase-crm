@@ -272,9 +272,15 @@ export default function ImportPage() {
         const lastInfo = (r.lastProductName || r.lastProductPrice)
           ? `[ซื้อล่าสุด: ${r.lastProductName ?? ''}${r.lastProductPrice ? ` ฿${r.lastProductPrice.toLocaleString()}` : ''}${dateInfo ? ` ${dateInfo}` : ''}]`
           : (dateInfo ? `[ซื้อล่าสุด: ${dateInfo}]` : '')
+        // A customer imported with a last purchase counts as 1 successful order
+        const hasPurchase = !!(r.lastProductPrice && r.lastProductPrice > 0)
         return {
           name: r.name, phone: r.phone, address: r.address, grade,
           ownerId: owner?.id, ownerName: owner?.name,
+          lastOrderDate: r.lastOrderDate,
+          totalOrders: hasPurchase ? 1 : 0,
+          totalAmount: hasPurchase ? r.lastProductPrice : 0,
+          successRate: hasPurchase ? 100 : 0,
           nextCallAt,
           notes: [r.notes, lastInfo].filter(Boolean).join(' '),
         }

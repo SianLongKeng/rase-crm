@@ -228,7 +228,8 @@ insert into public.grade_settings (id) values (1) on conflict (id) do nothing;
 alter table public.customers
   add column if not exists returned_count integer default 0,
   add column if not exists last_delivered_at timestamptz,
-  add column if not exists last_returned_at timestamptz;
+  add column if not exists last_returned_at timestamptz,
+  add column if not exists last_order_date timestamptz;
 
 create index if not exists customers_last_delivered_idx on customers(last_delivered_at);
 

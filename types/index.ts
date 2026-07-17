@@ -386,6 +386,7 @@ export interface Customer {
   lastDeliveredAt?: string             // วันที่ส่งสำเร็จล่าสุด
   lastReturnedAt?: string              // วันที่ตีกลับล่าสุด
   lastCallAt?: string
+  lastOrderDate?: string               // วันที่สั่งซื้อล่าสุด (จาก import / ออเดอร์)
   nextCallAt?: string
   nextCallNote?: string
   notes?: string

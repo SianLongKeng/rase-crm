@@ -203,7 +203,7 @@ export default function QueuePage() {
                     <tr><td className="py-0.5 text-slate-500">จังหวัด</td><td className="py-0.5">{selected.address ?? '—'}</td></tr>
                     <tr><td className="py-0.5 text-slate-500">ออเดอร์ทั้งหมด</td><td className="py-0.5 font-semibold">{selected.totalOrders} ครั้ง</td></tr>
                     <tr><td className="py-0.5 text-slate-500">ยอดรวม</td><td className="py-0.5 font-semibold text-emerald-600">฿{formatMoney(selected.totalAmount)}</td></tr>
-                    <tr><td className="py-0.5 text-slate-500">ลูกค้าสมัครเมื่อ</td><td className="py-0.5">{formatDate(selected.createdAt)}</td></tr>
+                    <tr><td className="py-0.5 text-slate-500">วันที่สั่งซื้อล่าสุด</td><td className="py-0.5">{selected.lastOrderDate ? formatDate(selected.lastOrderDate) : '—'}</td></tr>
                   </tbody>
                 </table>
               </Card>
@@ -212,13 +212,15 @@ export default function QueuePage() {
                 <p className="text-xs font-bold text-slate-700 dark:text-slate-200 mb-2">โน้ตล่าสุด</p>
                 {(() => {
                   const lc = latestCall(selected.id)
-                  if (!lc) return <p className="text-xs text-slate-400 italic">ยังไม่มีโน้ต</p>
-                  return (
+                  if (lc) return (
                     <>
                       <p className="text-[10px] text-slate-400">{formatDateTime(lc.createdAt)} · {lc.telesaleName}</p>
                       <p className="text-xs text-slate-700 dark:text-slate-200 mt-1">{lc.notes || '—'}</p>
                     </>
                   )
+                  // No call yet — fall back to the customer's own note (e.g. from import)
+                  if (selected.notes) return <p className="text-xs text-slate-700 dark:text-slate-200 whitespace-pre-wrap">{selected.notes}</p>
+                  return <p className="text-xs text-slate-400 italic">ยังไม่มีโน้ต</p>
                 })()}
               </Card>
 
