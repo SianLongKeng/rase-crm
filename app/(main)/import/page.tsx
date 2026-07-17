@@ -50,6 +50,17 @@ function parseDate(v: string): string | undefined {
     const d = new Date(year, parseInt(mm) - 1, parseInt(dd), parseInt(hh ?? '0'), parseInt(mi ?? '0'))
     return d.toISOString()
   }
+  // Excel stores dates as serial numbers (e.g. 46219 = 2026-07-16). When a cell is
+  // date-formatted, the xlsx reader returns that number, not "DD/MM/YYYY". Convert it —
+  // otherwise `new Date("46219")` would be parsed as the YEAR 46219.
+  if (/^\d+(\.\d+)?$/.test(v)) {
+    const serial = parseFloat(v)
+    if (serial > 20000 && serial < 90000) {
+      const d = new Date(Math.round((serial - 25569) * 86400000)) // 25569 = Excel serial of 1970-01-01
+      if (!isNaN(d.getTime())) return d.toISOString()
+    }
+    return undefined // a bare number outside the serial range is not a date
+  }
   // Try native
   const d = new Date(v)
   return isNaN(d.getTime()) ? undefined : d.toISOString()
