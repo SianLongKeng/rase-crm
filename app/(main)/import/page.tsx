@@ -71,7 +71,7 @@ function normalizeStatus(v: string): OrderStatus | undefined {
   if (!v) return undefined
   const s = v.trim().toLowerCase()
   if (s.includes('ระหว่างขนส่ง') || s.includes('กำลังจัดส่ง') || s.includes('shipping') || s.includes('shipped')) return 'shipping'
-  if (s.includes('สำเร็จ') || s.includes('delivered') || s.includes('รับแล้ว')) return 'delivered'
+  if (s.includes('สำเร็จ') || s.includes('delivered') || s.includes('รับแล้ว') || s.includes('รับพัสดุ')) return 'delivered'
   if (s.includes('ตีกลับ') || s.includes('returned') || s.includes('ส่งคืน')) return 'returned'
   if (s.includes('ยกเลิก') || s.includes('cancel')) return 'cancelled'
   if (s.includes('รอแพ็ค') || s.includes('wait')) return 'wait_pack'

@@ -940,9 +940,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })
     }
 
+    // Recompute purchase stats for every customer that received a new order
+    // (order count, total spend, success rate, last order date) — otherwise the
+    // orders show in history but the customer's stat tiles stay at 0.
+    const affectedIds = new Set(newOrders.map(o => o.customerId))
+    const ordersByCustomer = new Map<string, Order[]>()
+    for (const o of [...state.orders, ...newOrders]) {
+      if (!affectedIds.has(o.customerId)) continue
+      const arr = ordersByCustomer.get(o.customerId) ?? []
+      arr.push(o)
+      ordersByCustomer.set(o.customerId, arr)
+    }
+    const recomputeStats = (base: Customer): Customer => {
+      const os = ordersByCustomer.get(base.id) ?? []
+      const valid = os.filter(o => o.status !== 'cancelled' && o.status !== 'returned')
+      const returnedCount = os.filter(o => o.status === 'returned').length
+      const totalAmount = valid.reduce((s, o) => s + (o.totalAmount - (o.discount ?? 0)), 0)
+      const denom = valid.length + returnedCount
+      const successRate = denom > 0 ? Math.round((valid.length / denom) * 100) : 0
+      const lastOrderDate = os.map(o => o.createdAt).sort().at(-1) ?? base.lastOrderDate
+      return { ...base, totalOrders: valid.length, totalAmount, successRate, returnedCount, lastOrderDate, updatedAt: nowIso }
+    }
+    for (let i = 0; i < newCustomers.length; i++) {
+      if (affectedIds.has(newCustomers[i].id)) newCustomers[i] = recomputeStats(newCustomers[i])
+    }
+    const customerUpdates = state.customers.filter(c => affectedIds.has(c.id)).map(recomputeStats)
+
     // Update local state immediately
     if (newCustomers.length) dispatchRaw({ type: 'BULK_ADD_CUSTOMERS', payload: newCustomers })
     for (const o of newOrders) dispatchRaw({ type: 'ADD_ORDER', payload: o })
+    for (const c of customerUpdates) dispatchRaw({ type: 'UPDATE_CUSTOMER', payload: c })
 
     // Persist to Supabase in the RIGHT ORDER: customers first, then orders
     // (orders have a foreign key to customers — inserting an order before its
@@ -952,6 +979,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         try {
           if (newCustomers.length) await ds.bulkInsertCustomers(newCustomers)
           if (newOrders.length) await ds.bulkInsertOrders(newOrders)
+          for (const c of customerUpdates) await ds.upsertCustomer(c)
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e)
           console.warn('Supabase persist failed: bulkImportOrders', e)
