@@ -500,7 +500,7 @@ export function computeCommission(p: Product, atDate?: Date): number {
 export type CallResult = 'closed' | 'follow_up' | 'no_answer' | 'not_interested'
 
 export const CALL_RESULT_LABEL: Record<CallResult, string> = {
-  closed: 'ปิดได้', follow_up: 'Follow Up', no_answer: 'ไม่รับโทร', not_interested: 'ไม่สนใจ',
+  closed: 'ปิดได้', follow_up: 'Follow Up', no_answer: 'ไม่รับสาย', not_interested: 'ไม่สนใจ',
 }
 export const CALL_RESULT_COLOR: Record<CallResult, string> = {
   closed: 'bg-green-100 text-green-800',

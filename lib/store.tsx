@@ -580,7 +580,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const resultLabel =
       opts.result === 'closed' ? 'ปิดได้' :
       opts.result === 'follow_up' ? 'Follow Up' :
-      opts.result === 'no_answer' ? 'ไม่รับโทร' : 'ไม่สนใจ'
+      opts.result === 'no_answer' ? 'ไม่รับสาย' : 'ไม่สนใจ'
     addHistory('call_made', `โทรหา ${customer.name} — ${resultLabel}`, callLog.id, 'call_log')
 
     const nextCallAt = opts.result === 'follow_up' && opts.followUpAt
