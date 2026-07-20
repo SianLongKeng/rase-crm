@@ -102,7 +102,7 @@ function getCell(r: Record<string, unknown>, ...keys: string[]): string {
 type CustomerRow = {
   name: string; phone: string; address?: string; grade?: CustomerGrade; notes?: string
   lastProductName?: string; lastProductPrice?: number; lastOrderDate?: string
-  _valid: boolean; _reason?: string
+  _valid: boolean; _merge?: boolean; _reason?: string
 }
 
 type OrderRow = {
@@ -160,14 +160,17 @@ export default function ImportPage() {
       let valid = true, reason: string | undefined
       if (!name) { valid = false; reason = 'ขาดชื่อ' }
       else if (!phone) { valid = false; reason = 'ขาดเบอร์' }
-      else if (existingPhones.has(phoneKey)) { valid = false; reason = 'เบอร์ซ้ำในระบบ' }
+      // Duplicate phone is NOT an error — the purchase will be merged into the
+      // existing customer (combine totals, re-grade) instead of creating a new one.
+      const merge = valid && existingPhones.has(phoneKey)
       return {
         name, phone, address: address || undefined,
         grade: normalizeGrade(gradeRaw), notes: notes || undefined,
         lastProductName: lastProductName || undefined,
         lastProductPrice: lastProductPrice && lastProductPrice > 0 ? lastProductPrice : undefined,
         lastOrderDate,
-        _valid: valid, _reason: reason,
+        _valid: valid, _merge: merge,
+        _reason: merge ? 'เบอร์ซ้ำ — รวมยอดกับลูกค้าเดิม' : reason,
       }
     })
   }
@@ -285,8 +288,8 @@ export default function ImportPage() {
           notes: [r.notes, lastInfo].filter(Boolean).join(' '),
         }
       })
-      const count = bulkImportCustomers(valid)
-      setResult(`✅ นำเข้าลูกค้าสำเร็จ ${count} ราย`)
+      const res = bulkImportCustomers(valid)
+      setResult(`✅ นำเข้าลูกค้าสำเร็จ — ใหม่ ${res.created} ราย${res.merged ? `, รวมยอดกับลูกค้าเดิม ${res.merged} ราย` : ''}`)
       setCustomerRows([])
     } else {
       const valid = orderRows.filter(r => r._valid).map(r => ({
@@ -340,6 +343,7 @@ export default function ImportPage() {
   const rows = mode === 'customer' ? customerRows : orderRows
   const validCount = rows.filter(r => r._valid).length
   const invalidCount = rows.length - validCount
+  const mergeCount = rows.filter(r => r._valid && (r as CustomerRow)._merge).length
 
   return (
     <div>
@@ -392,7 +396,7 @@ export default function ImportPage() {
           <Card className="p-5">
             <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
               <div>
-                <p className="text-sm font-bold">พบ {rows.length} แถว · ✅ {validCount} · ⚠️ {invalidCount}</p>
+                <p className="text-sm font-bold">พบ {rows.length} แถว · ✅ {validCount} · ⚠️ {invalidCount}{mergeCount > 0 ? ` · 🔄 รวมยอด ${mergeCount}` : ''}</p>
                 <p className="text-xs text-slate-400 mt-1">เฉพาะแถวที่ถูกต้องเท่านั้นที่จะถูกนำเข้า</p>
               </div>
               <div className="flex gap-2 flex-wrap">
@@ -434,8 +438,8 @@ export default function ImportPage() {
                 </thead>
                 <tbody>
                   {mode === 'customer' && customerRows.map((r, i) => (
-                    <tr key={i} className={cn('border-b border-slate-50 dark:border-slate-800', !r._valid && 'bg-red-50/40 dark:bg-red-900/10')}>
-                      <td className="py-2 px-3">{r._valid ? <span className="text-emerald-600">✅</span> : <span className="text-red-500">⚠️</span>}</td>
+                    <tr key={i} className={cn('border-b border-slate-50 dark:border-slate-800', !r._valid && 'bg-red-50/40 dark:bg-red-900/10', r._merge && 'bg-amber-50/40 dark:bg-amber-900/10')}>
+                      <td className="py-2 px-3">{!r._valid ? <span className="text-red-500">⚠️</span> : r._merge ? <span title="รวมยอดกับลูกค้าเดิม">🔄</span> : <span className="text-emerald-600">✅</span>}</td>
                       <td className="py-2 px-2">{r.name || '—'}</td>
                       <td className="py-2 px-2">{r.phone || '—'}</td>
                       <td className="py-2 px-2 text-slate-500">{r.grade ?? defaultGrade}</td>
@@ -443,7 +447,7 @@ export default function ImportPage() {
                         {r.lastProductName && (
                           <span className="block text-emerald-700">📦 {r.lastProductName}{r.lastProductPrice ? ` · ฿${r.lastProductPrice.toLocaleString()}` : ''}</span>
                         )}
-                        <span className="text-red-500">{r._reason ?? r.notes ?? ''}</span>
+                        <span className={cn(r._merge ? 'text-amber-600' : 'text-red-500')}>{r._reason ?? r.notes ?? ''}</span>
                       </td>
                     </tr>
                   ))}

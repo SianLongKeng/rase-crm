@@ -158,7 +158,7 @@ interface AppCtx {
   /** Update customer + record edit history */
   updateCustomerWithHistory: (customerId: string, changes: Partial<Customer>) => void
 
-  bulkImportCustomers: (rows: Array<Partial<Customer> & { name: string; phone: string }>) => number
+  bulkImportCustomers: (rows: Array<Partial<Customer> & { name: string; phone: string }>) => { created: number; merged: number }
   bulkImportOrders: (rows: OrderImportRow[]) => { orders: number; newCustomers: number }
   updateGradeSettings: (settings: GradeSettings) => void
   recalculateAllGrades: () => { updated: number; total: number }
@@ -822,34 +822,86 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  function bulkImportCustomers(rows: Array<Partial<Customer> & { name: string; phone: string }>): number {
+  function bulkImportCustomers(rows: Array<Partial<Customer> & { name: string; phone: string }>): { created: number; merged: number } {
     const now = new Date().toISOString()
-    const existingPhones = new Set(state.customers.map(c => c.phone.replace(/\D/g, '')))
-    const newCustomers: Customer[] = []
+    const key = (p: string) => p.replace(/\D/g, '')
+    // Working copy of every customer keyed by phone — repeat imports merge cumulatively
+    const byPhone = new Map<string, Customer>()
+    for (const c of state.customers) byPhone.set(key(c.phone), { ...c })
+    const createdPhones = new Set<string>()
+    const touched = new Set<string>()
+
     for (const r of rows) {
-      const phoneKey = (r.phone ?? '').replace(/\D/g, '')
-      if (!phoneKey || existingPhones.has(phoneKey)) continue
-      existingPhones.add(phoneKey)
-      newCustomers.push({
-        id: generateId(),
-        name: r.name.trim(),
-        phone: r.phone.trim(),
-        address: r.address,
-        grade: r.grade ?? 'D',
-        ownerId: r.ownerId,
-        ownerName: r.ownerName,
-        totalOrders: r.totalOrders ?? 0, totalAmount: r.totalAmount ?? 0, successRate: r.successRate ?? 0,
-        lastOrderDate: r.lastOrderDate,
-        nextCallAt: r.nextCallAt ?? addDays(new Date(), GRADE_CALL_DAYS[r.grade ?? 'D']),
-        notes: r.notes,
-        createdAt: now, updatedAt: now,
-      })
+      const phoneKey = key(r.phone ?? '')
+      if (!phoneKey || !r.name.trim()) continue
+      touched.add(phoneKey)
+      const addOrders = r.totalOrders ?? 0
+      const addAmount = r.totalAmount ?? 0
+      const existing = byPhone.get(phoneKey)
+
+      if (!existing) {
+        // New customer — keep the grade from the file (fallback D)
+        byPhone.set(phoneKey, {
+          id: generateId(), name: r.name.trim(), phone: r.phone.trim(), address: r.address,
+          grade: r.grade ?? 'D', ownerId: r.ownerId, ownerName: r.ownerName,
+          totalOrders: addOrders, totalAmount: addAmount,
+          successRate: r.successRate ?? (addOrders > 0 ? 100 : 0),
+          returnedCount: 0, lastOrderDate: r.lastOrderDate,
+          nextCallAt: r.nextCallAt ?? addDays(new Date(), GRADE_CALL_DAYS[r.grade ?? 'D']),
+          notes: r.notes, createdAt: now, updatedAt: now,
+        })
+        createdPhones.add(phoneKey)
+      } else {
+        // Repeat phone → merge the purchase into the existing customer, then re-grade
+        const totalOrders = (existing.totalOrders ?? 0) + addOrders
+        const totalAmount = (existing.totalAmount ?? 0) + addAmount
+        const lastOrderDate = [existing.lastOrderDate, r.lastOrderDate].filter(Boolean).sort().at(-1) ?? existing.lastOrderDate
+        const grade = totalOrders > 0
+          ? computeCustomerGrade({ deliveredCount: totalOrders, returnedCount: existing.returnedCount ?? 0, totalAmount, settings: state.gradeSettings })
+          : existing.grade
+        const nextCallAt = lastOrderDate ? addDays(new Date(lastOrderDate), GRADE_CALL_DAYS[grade]) : existing.nextCallAt
+        byPhone.set(phoneKey, {
+          ...existing,
+          address: existing.address ?? r.address,
+          ownerId: existing.ownerId ?? r.ownerId,
+          ownerName: existing.ownerName ?? r.ownerName,
+          totalOrders, totalAmount,
+          successRate: totalOrders > 0 ? 100 : existing.successRate,
+          lastOrderDate, grade, nextCallAt,
+          notes: [existing.notes, r.notes].filter(Boolean).join(' '),
+          updatedAt: now,
+        })
+      }
     }
-    if (newCustomers.length) {
-      dispatch({ type: 'BULK_ADD_CUSTOMERS', payload: newCustomers })
-      addHistory('customer_added', `นำเข้าลูกค้าใหม่ ${newCustomers.length} ราย`)
+
+    const newCustomers: Customer[] = []
+    const updated: Customer[] = []
+    for (const pk of touched) {
+      const c = byPhone.get(pk)!
+      if (createdPhones.has(pk)) newCustomers.push(c)
+      else updated.push(c)
     }
-    return newCustomers.length
+
+    if (newCustomers.length) dispatchRaw({ type: 'BULK_ADD_CUSTOMERS', payload: newCustomers })
+    for (const c of updated) dispatchRaw({ type: 'UPDATE_CUSTOMER', payload: c })
+
+    if (isSupabaseEnabled() && supabase) {
+      void (async () => {
+        try {
+          if (newCustomers.length) await ds.bulkInsertCustomers(newCustomers)
+          for (const c of updated) await ds.upsertCustomer(c)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.warn('Supabase persist failed: bulkImportCustomers', e)
+          setSyncError(`นำเข้าลูกค้า — บันทึกลงระบบไม่สำเร็จ: ${msg}`)
+        }
+      })()
+    }
+
+    if (newCustomers.length || updated.length) {
+      addHistory('customer_added', `นำเข้าลูกค้า: ใหม่ ${newCustomers.length} ราย, รวมยอด ${updated.length} ราย`)
+    }
+    return { created: newCustomers.length, merged: updated.length }
   }
 
   function bulkImportOrders(rows: OrderImportRow[]): { orders: number; newCustomers: number } {
